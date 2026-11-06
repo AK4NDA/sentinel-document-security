@@ -1,0 +1,59 @@
+{
+  "version": "1.1.0",
+  "skillHash": "sha256:5c42e4b32f95f8eff44fdae439969b524c44e85f97c8cc0f3cacda5cf217f909",
+  "scoredAt": "2026-10-24T22:10:24.562Z",
+  "backend": "ollama",
+  "model": "gpt-oss:20b-64k",
+  "quality": {
+    "score": 77,
+    "dimensions": {
+      "clarity": "PASS",
+      "completeness": "WEAK",
+      "conciseness": "PASS",
+      "actionability": "PASS",
+      "crossPlatform": "FAIL",
+      "examples": "PASS"
+    },
+    "issues": [
+      {
+        "severity": "MEDIUM",
+        "category": "completeness",
+        "detail": "The instructions do not cover error scenarios or edge cases such as missing dependencies or misconfiguration."
+      },
+      {
+        "severity": "HIGH",
+        "category": "crossPlatform",
+        "detail": "The skill is vendor-locked to Python and does not support other AI agent platforms."
+      }
+    ]
+  },
+  "security": {
+    "verdict": "SAFE",
+    "issues": []
+  },
+  "impact": {
+    "multiplier": 2.24,
+    "baselineAvg": 37,
+    "treatmentAvg": 83,
+    "scenarios": [
+      {
+        "name": "fastapi-json-logging-with-request-context",
+        "baseline": 50,
+        "treatment": 100,
+        "rationale": "Response B meets all rubric requirements, while Response A lacks the required setup_logging call, foreign_pre_chain, and proper handler configuration."
+      },
+      {
+        "name": "flask-structured-logging-without-secrets",
+        "baseline": 60,
+        "treatment": 50,
+        "rationale": "Both responses miss a rubric requirement, but A avoids logging a secret key while B violates that rule by logging a 'secret' field."
+      },
+      {
+        "name": "integrate-third-party-logging-into-structlog",
+        "baseline": 0,
+        "treatment": 100,
+        "rationale": "Response B fully satisfies the rubric while Response A is empty."
+      }
+    ]
+  }
+}
