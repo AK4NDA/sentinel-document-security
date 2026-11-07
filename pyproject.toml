@@ -55,3 +55,6 @@ select = [
     "ASYNC250",
     "ASYNC251",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"app/api/**" = ["B008"]
