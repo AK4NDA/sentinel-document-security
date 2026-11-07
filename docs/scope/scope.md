@@ -52,7 +52,7 @@ Core entities every feature builds on: users, roles, clearances, classification 
   - [ ] Constraint, cascade, and ordering tests on SQLite and Postgres
 - [ ] Verify it: `/check verify data model`
 - [ ] Test it: `/test data model`
-- [ ] Review it (fresh model): `/check review data model`
+- [x] Review it (fresh model): `/check review data model`
 - [ ] Document it: `/document data model`
 Spec [0002](../specs/0002-data-model/index.md)
 
