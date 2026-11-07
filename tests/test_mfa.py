@@ -1,5 +1,6 @@
 """MFA acceptance tests for spec 0004."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pyotp
@@ -17,6 +18,7 @@ from test_api import (
 
 from app.main import app
 from app.models import MfaChallenge, User, UserRole
+from app.models import Session as UserSession
 from app.security import totp as totp_security
 
 
@@ -76,6 +78,34 @@ async def test_enroll_confirm_bad_code_401_audited(client, session_factory):
     assert rows and rows[-1].details["reason"] == "invalid_code"
 
 
+async def test_enroll_confirm_respects_lockout(client, session_factory):
+    await _limited_client(client, session_factory, "enrolllock")
+    await client.post("/v1/auth/mfa/enroll/start")
+
+    for _ in range(5):
+        response = await client.post("/v1/auth/mfa/enroll/confirm", json={"code": "000000"})
+        assert response.status_code == 401
+
+    async with session_factory() as session:
+        user = (
+            await session.execute(select(User).where(User.username == "enrolllock"))
+        ).scalar_one()
+        locked_until = user.locked_until
+        assert locked_until is not None
+
+    # a locked attempt must be rejected with 429 and must not extend the lock
+    response = await client.post("/v1/auth/mfa/enroll/confirm", json={"code": "000000"})
+    assert response.status_code == 429
+    assert response.json()["detail"]["retry_after_seconds"] > 0
+
+    async with session_factory() as session:
+        user = (
+            await session.execute(select(User).where(User.username == "enrolllock"))
+        ).scalar_one()
+        assert user.locked_until == locked_until
+        assert user.failed_login_attempts == 5
+
+
 async def test_enroll_restart_regenerates_secret(client, session_factory):
     await _limited_client(client, session_factory, "enroll4")
     first = (await client.post("/v1/auth/mfa/enroll/start")).json()["secret"]
@@ -115,6 +145,21 @@ async def test_unenrolled_session_can_use_me_and_logout(client, session_factory)
     assert (await client.post("/v1/auth/logout")).status_code == 204
 
 
+async def test_gate_denial_audited_under_endpoint_action(client, session_factory):
+    await _limited_client(client, session_factory, "gate1")
+
+    doc_response = await client.get(f"/v1/documents/{uuid.uuid4()}")
+    assert doc_response.status_code == 403
+    reset_response = await client.post(f"/v1/users/{uuid.uuid4()}/mfa/reset")
+    assert reset_response.status_code == 403
+
+    rows = await denied_rows(session_factory)
+    gate = [r for r in rows if r.details.get("reason") == "mfa_enrollment_required"]
+    actions = [r.action for r in gate]
+    assert "document.read" in actions
+    assert "mfa.reset" in actions
+
+
 # AC-5, AC-6: login challenge and verify
 
 
@@ -134,6 +179,9 @@ async def test_enrolled_login_returns_pending_token_no_cookie(client, session_fa
         rows = (await session.execute(select(MfaChallenge))).scalars().all()
         assert len(rows) == 1
         assert len(rows[0].token_hash) == 64
+        # a password-only success must not mint a session for an enrolled user
+        sessions_rows = (await session.execute(select(UserSession))).scalars().all()
+        assert sessions_rows == []
 
 
 async def test_mfa_verify_issues_session(client, session_factory):
@@ -209,6 +257,56 @@ async def test_challenge_expires(client, session_factory):
     assert response.status_code == 401
     rows = await denied_rows(session_factory, "mfa.verify")
     assert rows[-1].details["reason"] == "expired_challenge"
+
+
+async def test_challenge_invalidated_after_five_bad_codes(client, session_factory):
+    await make_user(session_factory, "chal7")
+    pending = (await login(client, "chal7")).json()["pending_token"]
+
+    for _ in range(5):
+        response = await client.post(
+            "/v1/auth/mfa/verify", json={"pending_token": pending, "code": "000000"}
+        )
+        assert response.status_code == 401
+
+    sixth = await client.post(
+        "/v1/auth/mfa/verify",
+        json={"pending_token": pending, "code": await totp_code(session_factory, "chal7")},
+    )
+    assert sixth.status_code == 401
+    rows = await denied_rows(session_factory, "mfa.verify")
+    assert rows[-1].details["reason"] == "challenge_consumed"
+
+
+async def test_verify_rejects_when_user_deactivated_mid_challenge(client, session_factory):
+    await make_user(session_factory, "chal8")
+    pending = (await login(client, "chal8")).json()["pending_token"]
+
+    async with session_factory() as session:
+        user = (await session.execute(select(User).where(User.username == "chal8"))).scalar_one()
+        user.is_active = False
+        await session.commit()
+
+    response = await client.post(
+        "/v1/auth/mfa/verify",
+        json={"pending_token": pending, "code": await totp_code(session_factory, "chal8")},
+    )
+    assert response.status_code == 401
+    rows = await denied_rows(session_factory, "mfa.verify")
+    assert rows[-1].details["reason"] == "user_unavailable"
+
+
+async def test_pending_token_never_appears_in_audit_details(client, session_factory):
+    await make_user(session_factory, "chal9")
+    pending = (await login(client, "chal9")).json()["pending_token"]
+    await client.post(
+        "/v1/auth/mfa/verify",
+        json={"pending_token": pending, "code": await totp_code(session_factory, "chal9")},
+    )
+
+    rows = await audit_rows(session_factory)
+    assert rows
+    assert all(pending not in str(r.details) for r in rows)
 
 
 # AC-7: replay protection

@@ -86,9 +86,9 @@ Thicken the auth strand: TOTP multi factor enrollment and login challenge, rate 
   - [x] Login challenge: pending token on login, mfa/verify exchange, challenge lifecycle (AC-5, AC-6)
   - [x] Lockout and admin reset: failure counter policy, 429 path, mfa/reset endpoint (AC-8, AC-9)
   - [x] Audit actions, profile mfa_enrolled, rate limit on verify, full test suite (AC-10, AC-11, AC-12)
-- [ ] Verify it: `/check verify MFA & login protection`
+- [x] Verify it: `/check verify MFA & login protection`
 - [ ] Test it: `/test MFA & login protection`
-- [ ] Review it (fresh model): `/check review MFA & login protection`
+- [x] Review it (fresh model): `/check review MFA & login protection`
 - [ ] Document it: `/document MFA & login protection`
 Spec [0004](../specs/0004-mfa-login-protection/index.md)
 

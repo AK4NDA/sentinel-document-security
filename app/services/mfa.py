@@ -106,8 +106,10 @@ async def confirm_enrollment(db: AsyncSession, user: User, code: str) -> bool:
     """Confirm a pending secret with a valid code; audits the outcome."""
     snapshot = audit.actor_kwargs(user)
     user_id = user.id
+    locked_retry = 0
 
-    async def attempt(session: AsyncSession) -> bool:
+    async def attempt(session: AsyncSession) -> str:
+        nonlocal locked_retry
         fresh = await session.get(User, user_id)
         assert fresh is not None
         if fresh.totp_secret_encrypted is None or fresh.totp_enabled_at is not None:
@@ -120,11 +122,24 @@ async def confirm_enrollment(db: AsyncSession, user: User, code: str) -> bool:
                 details={"stage": "confirm", "reason": "not_pending"},
                 **snapshot,
             )
-            return False
+            return "invalid"
+        now = datetime.now(UTC)
+        if lockout.is_locked(fresh, now):
+            locked_retry = lockout.retry_after_seconds(fresh, now)
+            await audit.append(
+                session,
+                action=ENROLL_ACTION,
+                outcome="denied",
+                target_type="user",
+                target_id=str(fresh.id),
+                details={"stage": "confirm", "reason": "locked"},
+                **snapshot,
+            )
+            return "locked"
         secret = totp.open_secret(fresh.totp_secret_encrypted)
         step = totp.verify_code(secret, code, fresh.totp_last_counter)
         if step is None:
-            lockout.record_failure(fresh)
+            lockout.record_failure(fresh, now=now)
             await audit.append(
                 session,
                 action=ENROLL_ACTION,
@@ -134,8 +149,8 @@ async def confirm_enrollment(db: AsyncSession, user: User, code: str) -> bool:
                 details={"stage": "confirm", "reason": "invalid_code"},
                 **snapshot,
             )
-            return False
-        fresh.totp_enabled_at = datetime.now(UTC)
+            return "invalid"
+        fresh.totp_enabled_at = now
         fresh.totp_last_counter = step
         lockout.record_success(fresh)
         await audit.append(
@@ -147,14 +162,22 @@ async def confirm_enrollment(db: AsyncSession, user: User, code: str) -> bool:
             details={"stage": "confirm"},
             **snapshot,
         )
-        return True
+        return "ok"
 
     try:
-        return await audit.transact(db, attempt)
+        result = await audit.transact(db, attempt)
     except audit.AuditChainFork:
         from fastapi import HTTPException
 
         raise HTTPException(500) from None
+    if result == "locked":
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"reason": "locked", "retry_after_seconds": locked_retry},
+        )
+    return result == "ok"
 
 
 async def verify_challenge(

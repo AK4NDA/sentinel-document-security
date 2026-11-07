@@ -3,7 +3,6 @@
 import hmac
 import time
 from datetime import UTC, datetime
-from urllib.parse import quote
 
 import pyotp
 import segno
@@ -29,7 +28,7 @@ def open_secret(blob: bytes) -> str:
 
 def provisioning_uri(username: str, secret: str) -> str:
     return pyotp.TOTP(secret).provisioning_uri(
-        name=quote(username, safe=""),
+        name=username,
         issuer_name=get_settings().totp_issuer,
     )
 

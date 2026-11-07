@@ -107,7 +107,9 @@ async def mfa_verify(
 
 
 @router.post("/mfa/enroll/start", response_model=MfaEnrollStartResponse)
+@limiter.limit(_auth_limit)
 async def mfa_enroll_start(
+    request: Request,
     auth: CurrentAuth,
     db: AsyncSession = Depends(get_db),
 ):
@@ -118,8 +120,10 @@ async def mfa_enroll_start(
 
 
 @router.post("/mfa/enroll/confirm", response_model=UserProfile)
+@limiter.limit(_auth_limit)
 async def mfa_enroll_confirm(
     body: MfaEnrollConfirmRequest,
+    request: Request,
     auth: CurrentAuth,
     db: AsyncSession = Depends(get_db),
 ):

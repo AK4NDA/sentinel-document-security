@@ -1,15 +1,19 @@
 """Unit tests for security, audit, session, and document helpers (spec 0003)."""
 
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pyotp
 import pytest
 from cryptography.exceptions import InvalidTag
 from fastapi import HTTPException
 
+from app.core.config import get_settings
 from app.models import ClassificationLevel, User, UserRole
 from app.security import encryption, passwords
-from app.services import audit, blob_store, documents, sessions
+from app.security import totp as totp_security
+from app.services import audit, blob_store, documents, lockout, sessions
 
 # passwords (AC-2, AC-4, AC-16)
 
@@ -291,3 +295,124 @@ async def test_read_capped_rejects_past_limit_early():
     with pytest.raises(HTTPException) as exc:
         await documents.read_capped(file)
     assert exc.value.status_code == 413
+
+
+# TOTP secret handling and code verification (spec 0004 AC-2, AC-7)
+
+
+def _code_at(secret: str, offset_steps: int = 0) -> str:
+    counter = int(time.time() // 30) + offset_steps
+    return pyotp.TOTP(secret).at(for_time=datetime.fromtimestamp(counter * 30, UTC))
+
+
+def test_totp_generate_secret_is_base32():
+    secret = totp_security.generate_secret()
+    assert len(secret) >= 16
+    assert set(secret) <= set("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
+
+
+def test_totp_secret_seal_open_roundtrip():
+    secret = totp_security.generate_secret()
+    blob = totp_security.seal_secret(secret)
+    assert secret.encode() not in blob
+    assert totp_security.open_secret(blob) == secret
+
+
+def test_totp_provisioning_uri_encodes_username_and_issuer():
+    uri = totp_security.provisioning_uri("user@example.com", "JBSWY3DPEHPK3PXP")
+    assert uri.startswith("otpauth://totp/")
+    assert "user%40example.com" in uri
+    assert get_settings().totp_issuer in uri
+
+
+def test_totp_verify_accepts_current_step():
+    secret = totp_security.generate_secret()
+    step = totp_security.verify_code(secret, _code_at(secret), None)
+    assert step == int(time.time() // 30)
+
+
+def test_totp_verify_accepts_previous_step_within_skew():
+    secret = totp_security.generate_secret()
+    expected = int(time.time() // 30) - 1
+    assert totp_security.verify_code(secret, _code_at(secret, -1), None) == expected
+
+
+def test_totp_verify_rejects_step_beyond_skew():
+    secret = totp_security.generate_secret()
+    assert totp_security.verify_code(secret, _code_at(secret, -2), None) is None
+    assert totp_security.verify_code(secret, _code_at(secret, 2), None) is None
+
+
+def test_totp_verify_rejects_malformed_codes():
+    secret = totp_security.generate_secret()
+    for bad in ("", "12345", "1234567", "abcdef", "12 456"):
+        assert totp_security.verify_code(secret, bad, None) is None
+
+
+def test_totp_verify_rejects_replayed_step():
+    secret = totp_security.generate_secret()
+    now_counter = int(time.time() // 30)
+    code = _code_at(secret)
+    # a stored counter at or above the matched step rejects the code
+    assert totp_security.verify_code(secret, code, now_counter) is None
+    assert totp_security.verify_code(secret, code, now_counter + 5) is None
+
+
+# lockout policy (spec 0004 AC-8)
+
+
+def test_lockout_not_locked_without_timestamp():
+    assert not lockout.is_locked(_user())
+
+
+def test_lockout_locked_while_locked_until_in_future():
+    user = _user(locked_until=datetime.now(UTC) + timedelta(minutes=5))
+    assert lockout.is_locked(user)
+    assert 290 < lockout.retry_after_seconds(user) <= 300
+
+
+def test_lockout_expired_timestamp_is_not_locked():
+    user = _user(locked_until=datetime.now(UTC) - timedelta(seconds=1))
+    assert not lockout.is_locked(user)
+    assert lockout.retry_after_seconds(user) == 0
+
+
+def test_lockout_accepts_naive_datetimes():
+    user = _user(locked_until=datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=1))
+    assert lockout.is_locked(user)
+
+
+def test_record_failure_locks_at_max_attempts():
+    settings = get_settings()
+    user = _user(failed_login_attempts=0)
+    now = datetime.now(UTC)
+    for _ in range(settings.login_max_attempts - 1):
+        lockout.record_failure(user, now=now)
+    assert user.failed_login_attempts == settings.login_max_attempts - 1
+    assert user.locked_until is None
+
+    lockout.record_failure(user, now=now)
+    assert user.failed_login_attempts == settings.login_max_attempts
+    assert user.locked_until == now + timedelta(seconds=settings.login_lockout_seconds)
+
+
+def test_record_success_resets_counter_and_lock():
+    user = _user(
+        failed_login_attempts=5,
+        locked_until=datetime.now(UTC) + timedelta(minutes=10),
+    )
+    lockout.record_success(user)
+    assert user.failed_login_attempts == 0
+    assert user.locked_until is None
+
+
+# MFA configuration defaults (spec 0004)
+
+
+def test_mfa_settings_defaults():
+    settings = get_settings()
+    assert settings.totp_issuer == "Sentinel"
+    assert settings.mfa_challenge_ttl_seconds == 300
+    assert settings.totp_skew_steps == 1
+    assert settings.login_max_attempts == 5
+    assert settings.login_lockout_seconds == 900
