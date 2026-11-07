@@ -71,7 +71,7 @@ The walking skeleton and the heart of the product: local accounts with Argon2 pa
 - [x] Verify it: `/check verify core classified document loop`
 - [x] Test it: `/test core classified document loop`
 - [x] Review it (fresh model): `/check review core classified document loop`
-- [ ] Document it: `/document core classified document loop`
+- [x] Document it: `/document core classified document loop`
 Spec [0003](../specs/0003-core-classified-document-loop/index.md)
 
 ## Slice 2: MFA & login protection
