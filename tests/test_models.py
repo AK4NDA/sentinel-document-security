@@ -371,6 +371,230 @@ async def test_user_delete_cascades_sessions_but_restrict_blocks_authors(session
                 await session.flush()
 
 
+async def test_share_cascades_when_grantee_user_deleted(sessionmaker):
+    async with sessionmaker() as session:
+        owner = await make_user(session, "owner")
+        grantee = await make_user(session, "grantee")
+        doc = await make_document(session, owner)
+        share = DocumentShare(document_id=doc.id, user_id=grantee.id, granted_by=owner.id)
+        session.add(share)
+        await session.commit()
+        share_id = share.id
+        await session.execute(delete(User).where(User.id == grantee.id))
+        await session.commit()
+        result = await session.execute(select(DocumentShare).where(DocumentShare.id == share_id))
+        assert result.scalars().all() == []
+
+
+async def test_share_granter_restrict_blocks_user_delete(sessionmaker):
+    async with sessionmaker() as session:
+        owner = await make_user(session, "owner")
+        granter = await make_user(session, "granter")
+        grantee = await make_user(session, "grantee")
+        doc = await make_document(session, owner)
+        session.add(DocumentShare(document_id=doc.id, user_id=grantee.id, granted_by=granter.id))
+        await session.commit()
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await session.execute(delete(User).where(User.id == granter.id))
+                await session.flush()
+
+
+async def test_share_revoker_restrict_blocks_user_delete(sessionmaker):
+    async with sessionmaker() as session:
+        owner = await make_user(session, "owner")
+        revoker = await make_user(session, "revoker")
+        grantee = await make_user(session, "grantee")
+        doc = await make_document(session, owner)
+        session.add(
+            DocumentShare(
+                document_id=doc.id,
+                user_id=grantee.id,
+                granted_by=owner.id,
+                revoked_by=revoker.id,
+                revoked_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await session.execute(delete(User).where(User.id == revoker.id))
+                await session.flush()
+
+
+async def test_version_creator_restrict_blocks_user_delete(sessionmaker):
+    async with sessionmaker() as session:
+        owner = await make_user(session, "owner")
+        author = await make_user(session, "author")
+        doc = Document(title="Someone elses doc", owner_id=owner.id)
+        session.add(doc)
+        await session.flush()
+        session.add(
+            DocumentVersion(
+                document_id=doc.id,
+                version_number=1,
+                classification=ClassificationLevel.SECRET,
+                content_sha256="f" * 64,
+                blob_path="ab/cd.blob",
+                size_bytes=10,
+                mime_type="text/plain",
+                created_by=author.id,
+            )
+        )
+        await session.commit()
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await session.execute(delete(User).where(User.id == author.id))
+                await session.flush()
+
+
+async def test_audit_log_snapshot_columns_have_no_foreign_keys(sessionmaker):
+    async with sessionmaker() as session:
+        ghost_actor = uuid.uuid4()
+        ghost_target = str(uuid.uuid4())
+        session.add(
+            AuditLog(
+                occurred_at=datetime.now(UTC),
+                actor_id=ghost_actor,
+                actor_username="deleted.user",
+                actor_role="admin",
+                action="document.read",
+                outcome="denied",
+                target_type="document",
+                target_id=ghost_target,
+                details={"reason": "clearance"},
+                prev_hash="0" * 64,
+                hash="1" * 64,
+            )
+        )
+        await session.commit()
+        row = (await session.execute(select(AuditLog))).scalar_one()
+        assert row.actor_id == ghost_actor
+        assert row.actor_username == "deleted.user"
+        assert row.details == {"reason": "clearance"}
+        assert row.prev_hash == "0" * 64
+
+
+async def test_audit_log_id_unique_and_required_columns(sessionmaker):
+    async with sessionmaker() as session:
+        shared_id = uuid.uuid4()
+        for _ in range(2):
+            session.add(
+                AuditLog(
+                    id=shared_id,
+                    occurred_at=datetime.now(UTC),
+                    action="test.event",
+                    outcome="allowed",
+                    hash="2" * 64,
+                )
+            )
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await session.flush()
+
+    async with sessionmaker() as session:
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                session.add(
+                    AuditLog(
+                        occurred_at=datetime.now(UTC),
+                        action="test.event",
+                        outcome="allowed",
+                    )
+                )
+                await session.flush()
+
+
+async def test_alert_fields_round_trip(sessionmaker):
+    async with sessionmaker() as session:
+        owner = await make_user(session)
+        now = datetime.now(UTC)
+        alert = Alert(
+            alert_type="access.denied",
+            severity="high",
+            document_id=uuid.uuid4(),
+            actor_id=owner.id,
+            details={"attempts": 3},
+            fingerprint="fp-123",
+            created_at=now,
+            acknowledged_at=now,
+            acknowledged_by=owner.id,
+        )
+        session.add(alert)
+        await session.commit()
+        stored = (await session.execute(select(Alert))).scalar_one()
+        assert stored.fingerprint == "fp-123"
+        assert stored.details == {"attempts": 3}
+        assert stored.acknowledged_by == owner.id
+        assert stored.document_id is not None
+
+
+async def test_user_secret_and_lockout_fields_store_binary_and_datetimes(sessionmaker):
+    async with sessionmaker() as session:
+        locked = datetime.now(UTC)
+        user = await make_user(
+            session,
+            "vault",
+            failed_login_attempts=5,
+            locked_until=locked,
+            totp_secret_encrypted=b"\x00\x01nonce\x02ciphertext",
+            totp_enabled_at=locked,
+        )
+        await session.commit()
+        stored = (await session.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert stored.totp_secret_encrypted == b"\x00\x01nonce\x02ciphertext"
+        assert stored.failed_login_attempts == 5
+        assert stored.locked_until is not None
+        assert stored.totp_enabled_at is not None
+
+
+async def test_session_fields_round_trip(sessionmaker):
+    async with sessionmaker() as session:
+        user = await make_user(session)
+        now = datetime.now(UTC)
+        sess = UserSession(
+            user_id=user.id,
+            token_hash="9" * 64,
+            created_at=now,
+            last_seen_at=now,
+            expires_at=now,
+            revoked_at=now,
+            ip_address="203.0.113.10",
+            user_agent="test-agent/1.0",
+        )
+        session.add(sess)
+        await session.commit()
+        stored = (await session.execute(select(UserSession))).scalar_one()
+        assert stored.revoked_at is not None
+        assert stored.ip_address == "203.0.113.10"
+        assert stored.user_agent == "test-agent/1.0"
+
+
+async def test_required_indexes_exist(sessionmaker):
+    expected = {
+        "documents": {
+            "ix_documents_owner_id",
+            "ix_documents_current_version_id",
+        },
+        "document_versions": {
+            "ix_document_versions_document_id",
+            "ix_document_versions_created_by",
+        },
+        "document_shares": {
+            "ix_document_shares_document_id",
+            "ix_document_shares_user_id",
+        },
+        "sessions": {"ix_sessions_user_id", "ix_sessions_expires_at"},
+        "audit_log": {"ix_audit_log_occurred_at", "ix_audit_log_target_id"},
+        "alerts": {"ix_alerts_created_at"},
+    }
+    async with sessionmaker() as session:
+        for table, names in expected.items():
+            rows = await session.execute(text(f"PRAGMA index_list('{table}')"))
+            actual = {row[1] for row in rows}
+            assert names <= actual, f"{table} missing indexes: {names - actual}"
+
+
 def test_migration_upgrade_downgrade_round_trip(tmp_path):
     db_path = tmp_path / "migration_test.db"
     env = dict(os.environ)
