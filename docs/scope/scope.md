@@ -14,7 +14,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 1 | Stack & architecture | Foundation | in-progress |
 | 2 | Coding standards & tooling | Foundation | planned |
 | 3 | Data model | Foundation | done |
-| 4 | Core classified document loop | Slice 1 | planned |
+| 4 | Core classified document loop | Slice 1 | in-progress |
 | 5 | MFA & login protection | Slice 2 | planned |
 | 6 | Administration & account lifecycle | Slice 3 | planned |
 | 7 | Auditor access & log verification | Slice 4 | planned |
@@ -58,10 +58,21 @@ Spec [0002](../specs/0002-data-model/index.md)
 
 ## Slice 1: Core classified document loop
 
-### 4. Core classified document loop · needs a decision
+### 4. Core classified document loop · in-progress
 The walking skeleton and the heart of the product: local accounts with Argon2 passwords and sessions, admins creating users with a role and clearance, uploading, reading, editing, and deleting documents that carry a classification level. Every action passes a deny by default policy check combining clearance, classification, and role, file bytes are stored AES-GCM encrypted, and every attempt allowed or denied lands in the hash chained audit log. Exposed as a REST API with tests; no UI yet.
 **Done when:** through the API, a user cleared for Secret can upload and read a Secret document, a user cleared only for Confidential is denied, the denial is recorded, and the audit chain verifies.
-- [ ] Design it (spec): `/architect core classified document loop`
+- [x] Design it (spec): `/architect core classified document loop`
+- [ ] Build it: `/develop core classified document loop`
+  - [ ] Audit chain: prev_hash unique migration, canonical hash service, verify function (AC-1, AC-14, AC-15)
+  - [ ] Security plumbing: password hashing, AES GCM blob store, session helpers (AC-2, AC-3, AC-6, AC-10)
+  - [ ] Auth surface: login, logout, me, cookie and Bearer dependencies, rate limit (AC-2, AC-3, AC-12, AC-17, AC-18, AC-19)
+  - [ ] Admin surface: user create and list endpoints plus create-admin CLI (AC-4, AC-5, AC-16)
+  - [ ] Document loop: policy engine and all six document endpoints (AC-6 through AC-14)
+- [ ] Verify it: `/check verify core classified document loop`
+- [ ] Test it: `/test core classified document loop`
+- [ ] Review it (fresh model): `/check review core classified document loop`
+- [ ] Document it: `/document core classified document loop`
+Spec [0003](../specs/0003-core-classified-document-loop/index.md)
 
 ## Slice 2: MFA & login protection
 
