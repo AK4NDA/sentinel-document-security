@@ -11,3 +11,5 @@ dist/
 build/
 htmlcov/
 cov_annotate/
+.agents/
+.claude/
