@@ -68,9 +68,9 @@ The walking skeleton and the heart of the product: local accounts with Argon2 pa
   - [x] Auth surface: login, logout, me, cookie and Bearer dependencies, rate limit (AC-2, AC-3, AC-12, AC-17, AC-18, AC-19)
   - [x] Admin surface: user create and list endpoints plus create-admin CLI (AC-4, AC-5, AC-16)
   - [x] Document loop: policy engine and all six document endpoints (AC-6 through AC-14)
-- [ ] Verify it: `/check verify core classified document loop`
-- [ ] Test it: `/test core classified document loop`
-- [ ] Review it (fresh model): `/check review core classified document loop`
+- [x] Verify it: `/check verify core classified document loop`
+- [x] Test it: `/test core classified document loop`
+- [x] Review it (fresh model): `/check review core classified document loop`
 - [ ] Document it: `/document core classified document loop`
 Spec [0003](../specs/0003-core-classified-document-loop/index.md)
 

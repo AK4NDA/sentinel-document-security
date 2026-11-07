@@ -6,16 +6,13 @@ import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.main import app
 from app.models import (
     AuditLog,
-    Base,
     ClassificationLevel,
     Document,
     DocumentVersion,
@@ -27,26 +24,6 @@ from app.services import audit
 
 PASSWORD = "correct horse battery"
 UPLOADS = {"file": ("note.txt", b"hello classified world", "text/plain")}
-
-
-@pytest.fixture
-async def session_factory():
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        poolclass=StaticPool,
-        connect_args={"check_same_thread": False},
-    )
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _fk(dbapi_connection, _record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    await engine.dispose()
 
 
 @pytest.fixture
@@ -683,3 +660,40 @@ async def test_create_admin_cli(session_factory, monkeypatch):
         assert user.role == UserRole.ADMIN
 
     assert await cli._create_admin(args) == 1
+
+
+async def test_upload_rejections_are_audited(client, session_factory):
+    """AC-14: 413/415 after authorization must write denied audit rows."""
+    await make_user(session_factory, "auditreject1")
+    await auth_client(client, "auditreject1")
+
+    bad_mime = await upload_doc(client, mime="application/x-msdownload")
+    assert bad_mime.status_code == 415
+
+    big = await client.post(
+        "/v1/documents",
+        files={"file": ("big.bin", b"x" * (25 * 1024 * 1024 + 1), "text/plain")},
+        data={"title": "big"},
+    )
+    assert big.status_code == 413
+
+    rows = await denied_rows(session_factory, "document.upload")
+    reasons = sorted((r.details or {}).get("reason") for r in rows)
+    assert reasons == ["too_large", "unsupported_media_type"]
+
+
+async def test_edit_rejections_are_audited(client, session_factory):
+    await make_user(session_factory, "auditreject2")
+    await auth_client(client, "auditreject2")
+    upload = await upload_doc(client, content=b"v1")
+    doc_id = upload.json()["id"]
+
+    bad_mime = await client.post(
+        f"/v1/documents/{doc_id}/versions",
+        files={"file": ("x.bin", b"x", "application/x-msdownload")},
+    )
+    assert bad_mime.status_code == 415
+
+    rows = await denied_rows(session_factory, "document.edit")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "unsupported_media_type"

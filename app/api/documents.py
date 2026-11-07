@@ -35,9 +35,7 @@ async def upload_document(
     doc = await documents_service.upload(
         db,
         actor,
-        filename=file.filename or "upload",
-        content=await file.read(),
-        mime_type=file.content_type,
+        file=file,
         title=title,
         description=description,
     )
@@ -96,9 +94,7 @@ async def create_version(
         db,
         actor,
         doc_id,
-        filename=file.filename or "upload",
-        content=await file.read(),
-        mime_type=file.content_type,
+        file=file,
         title=title,
         description=description,
     )

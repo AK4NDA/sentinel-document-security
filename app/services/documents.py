@@ -5,7 +5,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +58,39 @@ def check_upload(content: bytes, mime_type: str | None) -> str:
     if normalized not in ALLOWED_MIME_TYPES:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "unsupported media type")
     return normalized
+
+
+_UPLOAD_CHUNK = 1024 * 1024
+
+
+async def read_capped(file: UploadFile) -> bytes:
+    """Read an upload in chunks, rejecting past the cap before buffering it."""
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(_UPLOAD_CHUNK):
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "file too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _audit_reject(
+    db: AsyncSession,
+    action: str,
+    actor: User,
+    file: UploadFile,
+    status_code: int,
+) -> None:
+    reason = "too_large" if status_code == 413 else "unsupported_media_type"
+    await audit.record_denial(
+        db,
+        action=action,
+        actor=actor,
+        reason=reason,
+        target_type="document",
+        details={"filename": file.filename or "upload"},
+    )
 
 
 def to_meta(doc: Document) -> DocumentMeta:
@@ -120,13 +153,17 @@ async def upload(
     db: AsyncSession,
     actor: User,
     *,
-    filename: str,
-    content: bytes,
-    mime_type: str | None,
+    file: UploadFile,
     title: str,
     description: str | None,
 ) -> Document:
-    mime = check_upload(content, mime_type)
+    try:
+        content = await read_capped(file)
+        mime = check_upload(content, file.content_type)
+    except HTTPException as exc:
+        await _audit_reject(db, "document.upload", actor, file, exc.status_code)
+        raise
+    filename = file.filename or "upload"
     blob_path, digest = await blob_store.store(content)
     snapshot = audit.actor_kwargs(actor)
     owner_id = actor.id
@@ -275,9 +312,7 @@ async def edit(
     actor: User,
     doc_id: uuid.UUID,
     *,
-    filename: str,
-    content: bytes,
-    mime_type: str | None,
+    file: UploadFile,
     title: str | None,
     description: str | None,
 ) -> Document:
@@ -294,7 +329,13 @@ async def edit(
     version = doc.current_version
     if version is None or actor.clearance < version.classification:
         await _deny(db, "document.edit", actor, "clearance", doc=doc)
-    mime = check_upload(content, mime_type)
+    try:
+        content = await read_capped(file)
+        mime = check_upload(content, file.content_type)
+    except HTTPException as exc:
+        await _audit_reject(db, "document.edit", actor, file, exc.status_code)
+        raise
+    filename = file.filename or "upload"
     blob_path, digest = await blob_store.store(content)
     snapshot = audit.actor_kwargs(actor)
     owner_id = actor.id
