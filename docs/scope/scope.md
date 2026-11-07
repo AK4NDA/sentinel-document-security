@@ -14,7 +14,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 1 | Stack & architecture | Foundation | in-progress |
 | 2 | Coding standards & tooling | Foundation | planned |
 | 3 | Data model | Foundation | done |
-| 4 | Core classified document loop | Slice 1 | in-progress |
+| 4 | Core classified document loop | Slice 1 | done |
 | 5 | MFA & login protection | Slice 2 | planned |
 | 6 | Administration & account lifecycle | Slice 3 | planned |
 | 7 | Auditor access & log verification | Slice 4 | planned |
@@ -30,11 +30,11 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 Ratify the stated stack (Python, FastAPI, Pydantic, PostgreSQL with SQLite for development, SQLAlchemy and Alembic, React TypeScript Vite Tailwind held for the later UI scope) and decide the internal boundaries: where the policy engine lives, how encryption keys are managed, how the audit log is chained. Scaffold only the backend skeleton this pass needs.
 **Done when:** the stack and architecture are recorded in a spec, and the backend scaffold boots locally with a database connection and a clean migration.
 - [x] Decide the stack (spec): `/architect stack & architecture`
-- [ ] Scaffold from the decision: `/develop stack & architecture`
+- [x] Scaffold from the decision: `/develop stack & architecture`
 - [ ] Verify it: `/check verify stack & architecture`
 - [ ] Test it: `/test stack & architecture`
 - [ ] Review it (fresh model): `/check review stack & architecture`
-- [ ] Document it: `/document stack & architecture`
+- [x] Document it: `/document stack & architecture`
 Spec [0001](../specs/0001-stack-architecture/index.md)
 
 ### 2. Coding standards & tooling
@@ -58,7 +58,7 @@ Spec [0002](../specs/0002-data-model/index.md)
 
 ## Slice 1: Core classified document loop
 
-### 4. Core classified document loop · in-progress
+### 4. Core classified document loop · done
 The walking skeleton and the heart of the product: local accounts with Argon2 passwords and sessions, admins creating users with a role and clearance, uploading, reading, editing, and deleting documents that carry a classification level. Every action passes a deny by default policy check combining clearance, classification, and role, file bytes are stored AES-GCM encrypted, and every attempt allowed or denied lands in the hash chained audit log. Exposed as a REST API with tests; no UI yet.
 **Done when:** through the API, a user cleared for Secret can upload and read a Secret document, a user cleared only for Confidential is denied, the denial is recorded, and the audit chain verifies.
 - [x] Design it (spec): `/architect core classified document loop`
