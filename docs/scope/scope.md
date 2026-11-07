@@ -13,7 +13,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 |---|---------|-------|--------|
 | 1 | Stack & architecture | Foundation | in-progress |
 | 2 | Coding standards & tooling | Foundation | planned |
-| 3 | Data model | Foundation | in-progress |
+| 3 | Data model | Foundation | done |
 | 4 | Core classified document loop | Slice 1 | planned |
 | 5 | MFA & login protection | Slice 2 | planned |
 | 6 | Administration & account lifecycle | Slice 3 | planned |
@@ -42,18 +42,18 @@ Capture conventions from the real scaffolded project, then install lint, format,
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit hooks run clean on the scaffold.
 - [ ] Capture conventions and tooling choices: `/audit`
 
-### 3. Data model · in-progress
+### 3. Data model · done
 Core entities every feature builds on: users, roles, clearances, classification levels, documents, versions, per user shares, MFA secrets, sessions, and audit log entries, with the relationships and constraints the policy engine needs.
 **Done when:** entities and relationships support every later slice (versioning, sharing, search, alerts) without a breaking migration.
 - [x] Design it (spec): `/architect data model`
-- [ ] Build it: `/develop data model`
-  - [ ] Models and shared column helpers (enums, UUID PKs, timestamps)
-  - [ ] Alembic migration for all seven tables including the circular FK
-  - [ ] Constraint, cascade, and ordering tests on SQLite and Postgres
+- [x] Build it: `/develop data model`
+  - [x] Models and shared column helpers (enums, UUID PKs, timestamps)
+  - [x] Alembic migration for all seven tables including the circular FK
+  - [x] Constraint, cascade, and ordering tests on SQLite and Postgres
 - [ ] Verify it: `/check verify data model`
 - [x] Test it: `/test data model`
 - [x] Review it (fresh model): `/check review data model`
-- [ ] Document it: `/document data model`
+- [x] Document it: `/document data model`
 Spec [0002](../specs/0002-data-model/index.md)
 
 ## Slice 1: Core classified document loop

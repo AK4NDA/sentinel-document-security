@@ -1,7 +1,7 @@
 # 0002. Define the core data model for the classified document system
 
 **Date**: 2026-11-06
-**Status**: Proposed
+**Status**: Accepted
 
 ## Summary
 
