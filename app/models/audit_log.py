@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, String, Uuid
+from sqlalchemy import JSON, CheckConstraint, DateTime, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -20,6 +20,7 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
     __table_args__ = (
         CheckConstraint("outcome IN ('allowed', 'denied')", name="ck_audit_log_outcome"),
+        UniqueConstraint("prev_hash", name="uq_audit_log_prev_hash"),
     )
 
     seq: Mapped[int] = audit_seq()

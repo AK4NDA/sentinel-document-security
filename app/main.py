@@ -3,7 +3,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
+from app.api import auth as auth_router
+from app.api import documents as documents_router
+from app.api import users as users_router
+from app.api.auth import limiter
 from app.api.health import router as health_router
 from app.core.config import get_settings
 from app.core.database import engine
@@ -37,7 +43,12 @@ def create_app() -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(health_router)
+    app.include_router(auth_router.router)
+    app.include_router(users_router.router)
+    app.include_router(documents_router.router)
     return app
 
 

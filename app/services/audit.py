@@ -1,0 +1,244 @@
+"""Hash chained audit log append and verification (spec 0003 AC-14, AC-15)."""
+
+import hashlib
+import json
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import AuditLog, User
+
+GENESIS_PREV_HASH = "0" * 64
+MAX_APPEND_ATTEMPTS = 5
+
+_HASHED_FIELDS = (
+    "occurred_at",
+    "actor_id",
+    "actor_username",
+    "actor_role",
+    "action",
+    "outcome",
+    "target_type",
+    "target_id",
+    "details",
+    "prev_hash",
+)
+
+
+class AuditChainFork(Exception):
+    """Two writers raced for the same chain tail; the unique prev_hash fired."""
+
+
+def _canonical(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _canonical(value[key]) for key in sorted(value)}
+    if isinstance(value, (list, tuple)):
+        return [_canonical(item) for item in value]
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    return value
+
+
+def canonical_payload(fields: dict[str, Any]) -> str:
+    ordered = {key: _canonical(fields[key]) for key in _HASHED_FIELDS}
+    return json.dumps(ordered, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def compute_hash(fields: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_payload(fields).encode("utf-8")).hexdigest()
+
+
+def actor_kwargs(actor: User | None) -> dict[str, Any]:
+    """Snapshot actor columns as primitives so retries survive rollbacks."""
+    if actor is None:
+        return {"actor_id": None, "actor_username": None, "actor_role": None}
+    return {
+        "actor_id": actor.id,
+        "actor_username": actor.username,
+        "actor_role": actor.role.value,
+    }
+
+
+def entry_fields(entry: AuditLog) -> dict[str, Any]:
+    return {
+        "occurred_at": entry.occurred_at,
+        "actor_id": entry.actor_id,
+        "actor_username": entry.actor_username,
+        "actor_role": entry.actor_role,
+        "action": entry.action,
+        "outcome": entry.outcome,
+        "target_type": entry.target_type,
+        "target_id": entry.target_id,
+        "details": entry.details,
+        "prev_hash": entry.prev_hash,
+    }
+
+
+async def _tail_hash(session: AsyncSession) -> str:
+    result = await session.execute(select(AuditLog.hash).order_by(AuditLog.seq.desc()).limit(1))
+    return result.scalar_one_or_none() or GENESIS_PREV_HASH
+
+
+def _is_chain_fork(exc: IntegrityError) -> bool:
+    orig = str(getattr(exc, "orig", exc))
+    return "uq_audit_log_prev_hash" in orig or "prev_hash" in orig
+
+
+async def append(
+    session: AsyncSession,
+    *,
+    action: str,
+    outcome: str,
+    actor_id: uuid.UUID | None = None,
+    actor_username: str | None = None,
+    actor_role: str | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    details: dict[str, Any] | None = None,
+    occurred_at: datetime | None = None,
+) -> AuditLog:
+    """Append one chained entry inside the caller's transaction.
+
+    Actor columns are plain values (see actor_kwargs) so the entry can be
+    rebuilt safely after a rollback. Raises AuditChainFork when the unique
+    prev_hash constraint fires; the caller owns retrying the whole unit.
+    """
+    occurred_at = occurred_at or datetime.now(UTC)
+    prev_hash = await _tail_hash(session)
+    fields = {
+        "occurred_at": occurred_at,
+        "actor_id": actor_id,
+        "actor_username": actor_username,
+        "actor_role": actor_role,
+        "action": action,
+        "outcome": outcome,
+        "target_type": target_type,
+        "target_id": target_id,
+        "details": details,
+        "prev_hash": prev_hash,
+    }
+    entry = AuditLog(
+        id=uuid.uuid4(),
+        occurred_at=occurred_at,
+        actor_id=actor_id,
+        actor_username=actor_username,
+        actor_role=actor_role,
+        action=action,
+        outcome=outcome,
+        target_type=target_type,
+        target_id=target_id,
+        details=details,
+        prev_hash=prev_hash,
+        hash=compute_hash(fields),
+    )
+    session.add(entry)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if _is_chain_fork(exc):
+            raise AuditChainFork() from exc
+        raise
+    return entry
+
+
+async def transact(db: AsyncSession, op):
+    """Run op(db) plus commit, retrying the whole unit on a chain fork."""
+    for _ in range(MAX_APPEND_ATTEMPTS):
+        try:
+            result = await op(db)
+            await db.commit()
+            return result
+        except AuditChainFork:
+            await db.rollback()
+    raise AuditChainFork()
+
+
+async def record_denial(
+    db: AsyncSession,
+    *,
+    action: str,
+    reason: str,
+    actor: User | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Commit an audited denial independently of any business write."""
+    snapshot = actor_kwargs(actor)
+    await db.rollback()
+    payload = {"reason": reason, **(details or {})}
+    for _ in range(MAX_APPEND_ATTEMPTS):
+        try:
+            await append(
+                db,
+                action=action,
+                outcome="denied",
+                target_type=target_type,
+                target_id=target_id,
+                details=payload,
+                **snapshot,
+            )
+            await db.commit()
+            return
+        except AuditChainFork:
+            await db.rollback()
+    raise AuditChainFork()
+
+
+async def append_with_retry(
+    session_factory,
+    *,
+    action: str,
+    outcome: str,
+    actor_id: uuid.UUID | None = None,
+    actor_username: str | None = None,
+    actor_role: str | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> AuditLog:
+    """Append in its own transaction, retrying the whole unit on a fork."""
+    occurred_at = datetime.now(UTC)
+    last_exc: Exception | None = None
+    for _ in range(MAX_APPEND_ATTEMPTS):
+        async with session_factory() as session:
+            try:
+                entry = await append(
+                    session,
+                    action=action,
+                    outcome=outcome,
+                    actor_id=actor_id,
+                    actor_username=actor_username,
+                    actor_role=actor_role,
+                    target_type=target_type,
+                    target_id=target_id,
+                    details=details,
+                    occurred_at=occurred_at,
+                )
+                await session.commit()
+                return entry
+            except AuditChainFork as exc:
+                last_exc = exc
+                await session.rollback()
+    raise AuditChainFork() from last_exc
+
+
+async def verify_chain(session: AsyncSession) -> list[int]:
+    """Return the seq numbers whose stored hash does not recompute."""
+    rows = (await session.execute(select(AuditLog).order_by(AuditLog.seq))).scalars().all()
+    bad: list[int] = []
+    expected_prev = GENESIS_PREV_HASH
+    for row in rows:
+        fields = entry_fields(row)
+        if row.prev_hash != expected_prev or compute_hash(fields) != row.hash:
+            bad.append(row.seq)
+        expected_prev = row.hash
+    return bad
