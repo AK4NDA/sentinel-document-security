@@ -80,12 +80,12 @@ Spec [0003](../specs/0003-core-classified-document-loop/index.md)
 Thicken the auth strand: TOTP multi factor enrollment and login challenge, rate limiting on credential endpoints, and session revocation so a stolen or stale session cannot keep working.
 **Done when:** login requires a valid TOTP code after enrollment, repeated failures are throttled, and revoked sessions stop working immediately.
 - [x] Design it (spec): `/architect MFA & login protection`
-- [ ] Build it: `/develop MFA & login protection`
-  - [ ] Schema and TOTP core: mfa_challenges migration, model, secret seal/open, step verify with replay guard (AC-1, AC-2, AC-3, AC-7)
-  - [ ] Enrollment surface: enroll/start, enroll/confirm, limited session gate (AC-2, AC-3, AC-4)
-  - [ ] Login challenge: pending token on login, mfa/verify exchange, challenge lifecycle (AC-5, AC-6)
-  - [ ] Lockout and admin reset: failure counter policy, 429 path, mfa/reset endpoint (AC-8, AC-9)
-  - [ ] Audit actions, profile mfa_enrolled, rate limit on verify, full test suite (AC-10, AC-11, AC-12)
+- [x] Build it: `/develop MFA & login protection`
+  - [x] Schema and TOTP core: mfa_challenges migration, model, secret seal/open, step verify with replay guard (AC-1, AC-2, AC-3, AC-7)
+  - [x] Enrollment surface: enroll/start, enroll/confirm, limited session gate (AC-2, AC-3, AC-4)
+  - [x] Login challenge: pending token on login, mfa/verify exchange, challenge lifecycle (AC-5, AC-6)
+  - [x] Lockout and admin reset: failure counter policy, 429 path, mfa/reset endpoint (AC-8, AC-9)
+  - [x] Audit actions, profile mfa_enrolled, rate limit on verify, full test suite (AC-10, AC-11, AC-12)
 - [ ] Verify it: `/check verify MFA & login protection`
 - [ ] Test it: `/test MFA & login protection`
 - [ ] Review it (fresh model): `/check review MFA & login protection`

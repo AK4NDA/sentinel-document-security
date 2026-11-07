@@ -45,8 +45,13 @@ class User(Base):
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     totp_secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    totp_last_counter: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
+
+    @property
+    def mfa_enrolled(self) -> bool:
+        return self.totp_enabled_at is not None
 
     sessions: Mapped[list["Session"]] = relationship(
         back_populates="user", cascade="all, delete-orphan", lazy="raise"

@@ -3,13 +3,13 @@
 import hashlib
 import itertools
 import uuid
+from datetime import UTC, datetime
 
-import pytest
+import pyotp
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.core.database import get_db
 from app.main import app
 from app.models import (
     AuditLog,
@@ -19,23 +19,12 @@ from app.models import (
     User,
     UserRole,
 )
+from app.security import totp as totp_security
 from app.security.passwords import hash_password
 from app.services import audit
 
 PASSWORD = "correct horse battery"
 UPLOADS = {"file": ("note.txt", b"hello classified world", "text/plain")}
-
-
-@pytest.fixture
-async def client(session_factory):
-    async def override_get_db():
-        async with session_factory() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
-        yield http
-    app.dependency_overrides.clear()
 
 
 async def make_user(
@@ -46,8 +35,10 @@ async def make_user(
     clearance: ClassificationLevel = ClassificationLevel.UNCLASSIFIED,
     password: str = PASSWORD,
     is_active: bool = True,
+    enrolled: bool = True,
 ) -> User:
     async with session_factory() as session:
+        secret = totp_security.generate_secret() if enrolled else None
         user = User(
             username=username,
             email=f"{username}@example.com",
@@ -55,6 +46,8 @@ async def make_user(
             role=role,
             clearance=clearance,
             is_active=is_active,
+            totp_secret_encrypted=totp_security.seal_secret(secret) if secret else None,
+            totp_enabled_at=datetime.now(UTC) if enrolled else None,
         )
         session.add(user)
         await session.commit()
@@ -62,13 +55,41 @@ async def make_user(
         return user
 
 
+async def enroll_user(session_factory, username: str) -> None:
+    """Mark an existing user as MFA enrolled with a known secret."""
+    async with session_factory() as session:
+        user = (await session.execute(select(User).where(User.username == username))).scalar_one()
+        user.totp_secret_encrypted = totp_security.seal_secret(totp_security.generate_secret())
+        user.totp_enabled_at = datetime.now(UTC)
+        await session.commit()
+
+
+async def totp_code(session_factory, username: str) -> str:
+    async with session_factory() as session:
+        user = (await session.execute(select(User).where(User.username == username))).scalar_one()
+        secret = totp_security.open_secret(user.totp_secret_encrypted)
+    return pyotp.TOTP(secret).now()
+
+
 async def login(client: AsyncClient, username: str, password: str = PASSWORD):
     return await client.post("/v1/auth/login", json={"username": username, "password": password})
 
 
 async def auth_client(client: AsyncClient, username: str, **kwargs) -> AsyncClient:
+    import conftest
+
     response = await login(client, username, **kwargs)
     assert response.status_code == 200, response.text
+    body = response.json()
+    if body.get("mfa_required"):
+        verify = await client.post(
+            "/v1/auth/mfa/verify",
+            json={
+                "pending_token": body["pending_token"],
+                "code": await totp_code(conftest.SESSION_FACTORY, username),
+            },
+        )
+        assert verify.status_code == 200, verify.text
     return client
 
 
@@ -91,7 +112,7 @@ async def denied_rows(session_factory, action: str | None = None) -> list[AuditL
 
 
 async def test_login_success_sets_cookie_and_returns_profile(client, session_factory):
-    await make_user(session_factory, "officer1")
+    await make_user(session_factory, "officer1", enrolled=False)
 
     response = await login(client, "officer1")
 
@@ -151,7 +172,7 @@ async def test_protected_endpoint_requires_session(client, session_factory):
 
 
 async def test_bearer_token_accepted(client, session_factory):
-    await make_user(session_factory, "officer5")
+    await make_user(session_factory, "officer5", enrolled=False)
     login_response = await login(client, "officer5")
     token = client.cookies.get("session")
     assert token
@@ -166,7 +187,7 @@ async def test_bearer_token_accepted(client, session_factory):
 
 
 async def test_me_returns_profile_for_auditor(client, session_factory):
-    await make_user(session_factory, "auditor1", role=UserRole.AUDITOR)
+    await make_user(session_factory, "auditor1", role=UserRole.AUDITOR, enrolled=False)
     await auth_client(client, "auditor1")
 
     response = await client.get("/v1/auth/me")
@@ -176,7 +197,7 @@ async def test_me_returns_profile_for_auditor(client, session_factory):
 
 
 async def test_logout_revokes_session(client, session_factory):
-    await make_user(session_factory, "officer6")
+    await make_user(session_factory, "officer6", enrolled=False)
     await auth_client(client, "officer6")
 
     response = await client.post("/v1/auth/logout")
@@ -579,6 +600,7 @@ async def test_audit_chain_verifies_after_mixed_operations(client, session_facto
         },
     )
 
+    await enroll_user(session_factory, "chainofficer")
     officer_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
     await auth_client(officer_client, "chainofficer", password="a long password")
     upload = await upload_doc(officer_client, content=b"chain")

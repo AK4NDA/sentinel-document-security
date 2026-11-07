@@ -14,6 +14,30 @@ os.environ.setdefault("UPLOAD_DIR", str(Path("data/test-uploads")))
 os.environ.setdefault("LOG_LEVEL", "INFO")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
+# Set by the client fixture so helpers like auth_client can reach the test DB.
+SESSION_FACTORY = None
+
+
+@pytest.fixture
+async def client(session_factory):
+    global SESSION_FACTORY
+    SESSION_FACTORY = session_factory
+
+    from httpx import ASGITransport, AsyncClient
+
+    from app.core.database import get_db
+    from app.main import app
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        yield http
+    app.dependency_overrides.clear()
+    SESSION_FACTORY = None
+
 
 @pytest.fixture
 async def session_factory():
