@@ -13,7 +13,7 @@ Layered monolith. Routers in `api/` are thin: they parse requests, call one serv
 | `main.py` | App factory, middleware, router registration, lifespan |
 | `api/deps.py` | Session auth dependencies: cookie and Bearer, per request user re-read, MFA enrollment gate |
 | `services/policy.py` | Deny by default access checks (clearance, role) |
-| `services/audit.py` | Hash chained audit append, canonical hashing, `verify_chain` |
+| `services/audit.py` | Hash chained audit append, canonical hashing, `verify_chain`, `verify_summary`, `list_entries` |
 | `services/documents.py` | Document loop: upload, read, version, delete with policy + audit |
 | `services/mfa.py` | TOTP enrollment, pending challenge tokens, verify exchange |
 | `services/sessions.py` | Opaque token issue, SHA-256 storage, sliding expiry, revocation |
@@ -44,5 +44,6 @@ Layered monolith. Routers in `api/` are thin: they parse requests, call one serv
 - [0003 core classified document loop](../docs/specs/0003-core-classified-document-loop/index.md)
 - [0004 MFA and login protection](../docs/specs/0004-mfa-login-protection/index.md)
 - [0005 administration and account lifecycle](../docs/specs/0005-administration-account-lifecycle/index.md)
+- [0006 auditor access and log verification](../docs/specs/0006-auditor-access-log-verification.md)
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

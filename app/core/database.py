@@ -22,3 +22,7 @@ def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
 async def get_db() -> AsyncIterator[AsyncSession]:
     async with SessionLocal() as session:
         yield session
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    return SessionLocal
