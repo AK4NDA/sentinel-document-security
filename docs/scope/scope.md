@@ -45,7 +45,7 @@ Ratify the stated stack (Python, FastAPI, Pydantic, PostgreSQL with SQLite for d
 Capture conventions from the real scaffolded project, then install lint, format, type strictness, and pre commit enforcement so every later slice follows the same rules.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit hooks run clean on the scaffold.
 
-- [ ] Capture conventions and tooling choices: `/audit`
+- [x] Capture conventions and tooling choices: `/audit`
 
 ### 3. Data model · done
 
