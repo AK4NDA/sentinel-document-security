@@ -9,42 +9,49 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 
 ## At a glance
 
-| # | Feature | Phase | Status |
-|---|---------|-------|--------|
-| 1 | Stack & architecture | Foundation | in-progress |
-| 2 | Coding standards & tooling | Foundation | planned |
-| 3 | Data model | Foundation | done |
-| 4 | Core classified document loop | Slice 1 | done |
-| 5 | MFA & login protection | Slice 2 | in-progress |
-| 6 | Administration & account lifecycle | Slice 3 | planned |
-| 7 | Auditor access & log verification | Slice 4 | planned |
-| 8 | Document version history | Slice 5 | planned |
-| 9 | Full text search | Slice 6 | planned |
-| 10 | Per user sharing | Slice 7 | planned |
-| 11 | Access alerts | Slice 8 | planned |
-| 12 | Runnable demo packaging · Alpha | Slice 9 | planned |
+| #   | Feature                            | Phase      | Status      |
+| --- | ---------------------------------- | ---------- | ----------- |
+| 1   | Stack & architecture               | Foundation | in-progress |
+| 2   | Coding standards & tooling         | Foundation | planned     |
+| 3   | Data model                         | Foundation | done        |
+| 4   | Core classified document loop      | Slice 1    | done        |
+| 5   | MFA & login protection             | Slice 2    | in-progress |
+| 6   | Administration & account lifecycle | Slice 3    | in-progress |
+| 7   | Auditor access & log verification  | Slice 4    | planned     |
+| 8   | Document version history           | Slice 5    | planned     |
+| 9   | Full text search                   | Slice 6    | planned     |
+| 10  | Per user sharing                   | Slice 7    | planned     |
+| 11  | Access alerts                      | Slice 8    | planned     |
+| 12  | Runnable demo packaging · Alpha    | Slice 9    | planned     |
+| 13  | Maintenance & retention            | Hardening  | planned     |
 
 ## Foundations
 
 ### 1. Stack & architecture · in-progress
+
 Ratify the stated stack (Python, FastAPI, Pydantic, PostgreSQL with SQLite for development, SQLAlchemy and Alembic, React TypeScript Vite Tailwind held for the later UI scope) and decide the internal boundaries: where the policy engine lives, how encryption keys are managed, how the audit log is chained. Scaffold only the backend skeleton this pass needs.
 **Done when:** the stack and architecture are recorded in a spec, and the backend scaffold boots locally with a database connection and a clean migration.
+
 - [x] Decide the stack (spec): `/architect stack & architecture`
 - [x] Scaffold from the decision: `/develop stack & architecture`
 - [ ] Verify it: `/check verify stack & architecture`
 - [ ] Test it: `/test stack & architecture`
 - [ ] Review it (fresh model): `/check review stack & architecture`
 - [x] Document it: `/document stack & architecture`
-Spec [0001](../specs/0001-stack-architecture/index.md)
+      Spec [0001](../specs/0001-stack-architecture/index.md)
 
 ### 2. Coding standards & tooling
+
 Capture conventions from the real scaffolded project, then install lint, format, type strictness, and pre commit enforcement so every later slice follows the same rules.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit hooks run clean on the scaffold.
+
 - [ ] Capture conventions and tooling choices: `/audit`
 
 ### 3. Data model · done
+
 Core entities every feature builds on: users, roles, clearances, classification levels, documents, versions, per user shares, MFA secrets, sessions, and audit log entries, with the relationships and constraints the policy engine needs.
 **Done when:** entities and relationships support every later slice (versioning, sharing, search, alerts) without a breaking migration.
+
 - [x] Design it (spec): `/architect data model`
 - [x] Build it: `/develop data model`
   - [x] Models and shared column helpers (enums, UUID PKs, timestamps)
@@ -54,13 +61,15 @@ Core entities every feature builds on: users, roles, clearances, classification 
 - [x] Test it: `/test data model`
 - [x] Review it (fresh model): `/check review data model`
 - [x] Document it: `/document data model`
-Spec [0002](../specs/0002-data-model/index.md)
+      Spec [0002](../specs/0002-data-model/index.md)
 
 ## Slice 1: Core classified document loop
 
 ### 4. Core classified document loop · done
+
 The walking skeleton and the heart of the product: local accounts with Argon2 passwords and sessions, admins creating users with a role and clearance, uploading, reading, editing, and deleting documents that carry a classification level. Every action passes a deny by default policy check combining clearance, classification, and role, file bytes are stored AES-GCM encrypted, and every attempt allowed or denied lands in the hash chained audit log. Exposed as a REST API with tests; no UI yet.
 **Done when:** through the API, a user cleared for Secret can upload and read a Secret document, a user cleared only for Confidential is denied, the denial is recorded, and the audit chain verifies.
+
 - [x] Design it (spec): `/architect core classified document loop`
 - [x] Build it: `/develop core classified document loop`
   - [x] Audit chain: prev_hash unique migration, canonical hash service, verify function (AC-1, AC-14, AC-15)
@@ -72,74 +81,109 @@ The walking skeleton and the heart of the product: local accounts with Argon2 pa
 - [x] Test it: `/test core classified document loop`
 - [x] Review it (fresh model): `/check review core classified document loop`
 - [x] Document it: `/document core classified document loop`
-Spec [0003](../specs/0003-core-classified-document-loop/index.md)
+      Spec [0003](../specs/0003-core-classified-document-loop/index.md)
 
 ## Slice 2: MFA & login protection
 
 ### 5. MFA & login protection · in-progress
+
 Thicken the auth strand: TOTP multi factor enrollment and login challenge, rate limiting on credential endpoints, and session revocation so a stolen or stale session cannot keep working.
 **Done when:** login requires a valid TOTP code after enrollment, repeated failures are throttled, and revoked sessions stop working immediately.
+
 - [x] Design it (spec): `/architect MFA & login protection`
-- [ ] Build it: `/develop MFA & login protection`
-  - [ ] Schema and TOTP core: mfa_challenges migration, model, secret seal/open, step verify with replay guard (AC-1, AC-2, AC-3, AC-7)
-  - [ ] Enrollment surface: enroll/start, enroll/confirm, limited session gate (AC-2, AC-3, AC-4)
-  - [ ] Login challenge: pending token on login, mfa/verify exchange, challenge lifecycle (AC-5, AC-6)
-  - [ ] Lockout and admin reset: failure counter policy, 429 path, mfa/reset endpoint (AC-8, AC-9)
-  - [ ] Audit actions, profile mfa_enrolled, rate limit on verify, full test suite (AC-10, AC-11, AC-12)
-- [ ] Verify it: `/check verify MFA & login protection`
-- [ ] Test it: `/test MFA & login protection`
-- [ ] Review it (fresh model): `/check review MFA & login protection`
-- [ ] Document it: `/document MFA & login protection`
-Spec [0004](../specs/0004-mfa-login-protection/index.md)
+- [x] Build it: `/develop MFA & login protection`
+  - [x] Schema and TOTP core: mfa_challenges migration, model, secret seal/open, step verify with replay guard (AC-1, AC-2, AC-3, AC-7)
+  - [x] Enrollment surface: enroll/start, enroll/confirm, limited session gate (AC-2, AC-3, AC-4)
+  - [x] Login challenge: pending token on login, mfa/verify exchange, challenge lifecycle (AC-5, AC-6)
+  - [x] Lockout and admin reset: failure counter policy, 429 path, mfa/reset endpoint (AC-8, AC-9)
+  - [x] Audit actions, profile mfa_enrolled, rate limit on verify, full test suite (AC-10, AC-11, AC-12)
+- [x] Verify it: `/check verify MFA & login protection`
+- [x] Test it: `/test MFA & login protection`
+- [x] Review it (fresh model): `/check review MFA & login protection`
+- [x] Document it: `/document MFA & login protection`
+      Spec [0004](../specs/0004-mfa-login-protection/index.md)
 
 ## Slice 3: Administration & account lifecycle
 
-### 6. Administration & account lifecycle · needs a decision
+### 6. Administration & account lifecycle · in-progress
+
 Let admins run the user base: change roles and clearances, disable and re-enable accounts, force logout, and reset credentials, with every privilege change itself written to the audit log and its effect on live sessions and existing shares defined.
 **Done when:** an admin can change a user's clearance or role, disable the account, and every one of those actions is audited with the before and after values.
-- [ ] Design it (spec): `/architect administration & account lifecycle`
+
+- [x] Design it (spec): `/architect administration & account lifecycle`
+- [x] Build it: `/develop administration & account lifecycle`
+  - [x] PATCH thread end to end: role and clearance mutation, before and after audit, self demotion guard (AC-1, AC-2, AC-8, AC-9)
+  - [x] Disable and enable: conflict checks, self disable guard, pending challenge deletion (AC-3, AC-6, AC-9)
+  - [x] Session revoke and password reset: shared revoke helper, lockout clear, challenge deletion (AC-4, AC-5, AC-9)
+  - [x] Test alignment and session behavior verification across the full suite (AC-1, AC-3, AC-5, AC-6, AC-7, AC-8, AC-9)
+- [x] Verify it: `/check verify administration & account lifecycle`
+- [x] Test it: `/test administration & account lifecycle`
+- [x] Review it (fresh model): `/check review administration & account lifecycle`
+- [x] Document it: `/document administration & account lifecycle`
+      Spec [0005](../specs/0005-administration-account-lifecycle/index.md) · code in `app/api/users.py`, `app/services/users.py`
 
 ## Slice 4: Auditor access & log verification
 
 ### 7. Auditor access & log verification · needs a decision
+
 Give the auditor role its own surface: read access to the audit log, an endpoint or report that recomputes the hash chain and proves no entry was edited or deleted, and hard separation so auditors cannot touch documents at all.
 **Done when:** an auditor can browse and verify the log, a tampered entry is detected by verification, and any auditor attempt to read a document is denied and logged.
+
 - [ ] Design it (spec): `/architect auditor access & log verification`
 
 ## Slice 5: Document version history
 
 ### 8. Document version history · needs a decision
+
 Keep every prior version of a document on edit, each with its own classification and authorship, support reading and restoring an older version, and audit every version event. Decide how classification changes across versions interact with the write down rule.
 **Done when:** editing a document preserves the old version, each version carries its own classification, a user can restore an earlier version, and the chain of custody stays intact in the log.
+
 - [ ] Design it (spec): `/architect document version history`
 
 ## Slice 6: Full text search
 
 ### 9. Full text search · needs a decision
+
 Let users find documents by content, with results filtered by the caller's clearance so a search never reveals the existence of a document above it. Decide the indexing approach and how encrypted content is indexed without weakening encryption.
 **Done when:** a user can search and only sees documents their clearance and role permit, and searching for a term that only exists in a higher classified document returns nothing.
+
 - [ ] Design it (spec): `/architect full text search`
 
 ## Slice 7: Per user sharing
 
 ### 10. Per user sharing · needs a decision
+
 Layer named user grants on top of the policy model so a document can be shared with specific people beyond the default clearance rules, with grant and revoke audited and the interaction with classification levels defined.
 **Done when:** a user can share a document with a named colleague who could not otherwise read it, the grant appears in the audit log, revoking it blocks further access, and grants never override a lower classification ceiling.
+
 - [ ] Design it (spec): `/architect per user sharing`
 
 ## Slice 8: Access alerts
 
 ### 11. Access alerts · needs a decision
+
 Surface the interesting events: denied attempts, access to the most sensitive classifications, and privilege changes generate alert records that admins and auditors can review. The channel decision (in app records versus email) is the open question; recommend in app records to keep the demo self contained.
 **Done when:** a denied access attempt and a Top Secret read each produce an alert record visible to admins and auditors, and alert generation is itself audited.
+
 - [ ] Design it (spec): `/architect access alerts`
 
 ## Slice 9: Runnable demo packaging · Alpha
 
 ### 12. Runnable demo packaging
+
 Make the whole thing boot with one Docker command: container images for the API and database, compose wiring, seed data covering every role and clearance, and a short scripted walkthrough that exercises allow and deny paths for a demo.
 **Done when:** one compose command starts the system, seeded users can log in and hit the documented walkthrough, and the audit log shows the full trail.
+
 - [ ] Build it: `/develop runnable demo packaging`
+
+## Hardening
+
+### 13. Maintenance & retention · needs a decision
+
+Keep the system tidy over time: expired and consumed `mfa_challenges` rows, stale sessions, and orphaned encrypted blobs left behind by document deletes and version churn get a cleanup story, either a scheduled job or an explicit retention policy. Surfaced by spec 0004 and spec 0003 follow-ups.
+**Done when:** expired challenges and orphaned blobs are removed by a defined mechanism, the cleanup itself is audited or logged, and no live data is ever collected.
+
+- [ ] Design it (spec): `/architect maintenance & retention`
 
 ## Deferred
 
@@ -149,6 +193,10 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **SSO and enterprise IdP**: single sign on for defence organisations · needs a decision
 - **Email alert channel**: deliver access alerts by email in addition to in app records · needs a decision
 - **Document export and printing**: controlled export of documents out of the system · needs a decision · GA
+- **WebAuthn or hardware keys**: phishing resistant second factor to replace or augment TOTP · needs a decision
+- **MFA recovery codes**: backup codes for lost authenticators; admin reset covers this for now · needs a decision
+- **Step up re authentication for admin actions**: a fresh password or TOTP prompt before destructive admin operations · from spec 0005 · needs a decision
+- **Forced password change flag**: a permanent "must change password" account state for operations · from spec 0005 · needs a decision
 
 ## Legend
 
@@ -156,13 +204,13 @@ Out of scope for the current build pass, kept so the plan stays honest.
 
 **Feature lifecycle**: the scope updates as a feature moves; each row is what it shows and who sets it:
 
-| State | Set by | The feature shows |
-|---|---|---|
-| `planned` · needs a decision | `/scope` | one box: `Design it (spec): /architect <feature>` |
-| `in-progress` (designed) | **`/architect` at spec capture** | `Design it` ticked; spec linked; `Build it: /develop <feature>` + **2 to 5 milestones**; the tier's closing boxes (`Verify it` Alpha+, `Test it` Beta+, `Review it` + `Document it` GA); any surfaced follow-up enrolled |
-| `in-progress` (building) | `/develop` | milestone sub-boxes tick one by one; code pointer filled |
-| `in-progress` (verified) | `/check verify` | `Build it` + milestones ticked; `Verify it` ticked |
-| `done` | **you, when you decide it is** (any skill sets it when you say so); `/sync` reconciles | boxes you ran ticked, skipped ones marked skipped; the tier's last stage (`Prototype` → after `/develop`; `Alpha` → after `/check verify`; `Beta`/`GA` → after `/test`) is the suggested point to call it done; `/sync` captures conventions |
+| State                        | Set by                                                                                 | The feature shows                                                                                                                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `planned` · needs a decision | `/scope`                                                                               | one box: `Design it (spec): /architect <feature>`                                                                                                                                                                                            |
+| `in-progress` (designed)     | **`/architect` at spec capture**                                                       | `Design it` ticked; spec linked; `Build it: /develop <feature>` + **2 to 5 milestones**; the tier's closing boxes (`Verify it` Alpha+, `Test it` Beta+, `Review it` + `Document it` GA); any surfaced follow-up enrolled                     |
+| `in-progress` (building)     | `/develop`                                                                             | milestone sub-boxes tick one by one; code pointer filled                                                                                                                                                                                     |
+| `in-progress` (verified)     | `/check verify`                                                                        | `Build it` + milestones ticked; `Verify it` ticked                                                                                                                                                                                           |
+| `done`                       | **you, when you decide it is** (any skill sets it when you say so); `/sync` reconciles | boxes you ran ticked, skipped ones marked skipped; the tier's last stage (`Prototype` → after `/develop`; `Alpha` → after `/check verify`; `Beta`/`GA` → after `/test`) is the suggested point to call it done; `/sync` captures conventions |
 
 - **Next step** = the first unticked box (always a command or a tracked milestone).
 - **needs a decision** = run `/architect` first; otherwise straight to `/develop` (or `/audit` for standards & tooling). The tag drops once the spec is captured.

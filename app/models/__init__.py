@@ -7,6 +7,7 @@ from app.models.document import Document
 from app.models.document_share import DocumentShare
 from app.models.document_version import DocumentVersion
 from app.models.enums import ClassificationLevel, UserRole
+from app.models.mfa_challenge import MfaChallenge
 from app.models.session import Session
 from app.models.user import User
 
@@ -18,6 +19,7 @@ __all__ = [
     "Document",
     "DocumentShare",
     "DocumentVersion",
+    "MfaChallenge",
     "Session",
     "User",
     "UserRole",

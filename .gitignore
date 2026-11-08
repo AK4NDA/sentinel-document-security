@@ -13,3 +13,4 @@ htmlcov/
 cov_annotate/
 .agents/
 .claude/
+.idea
