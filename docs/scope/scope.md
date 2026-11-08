@@ -16,7 +16,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 3   | Data model                         | Foundation | done        |
 | 4   | Core classified document loop      | Slice 1    | done        |
 | 5   | MFA & login protection             | Slice 2    | in-progress |
-| 6   | Administration & account lifecycle | Slice 3    | planned     |
+| 6   | Administration & account lifecycle | Slice 3    | in-progress |
 | 7   | Auditor access & log verification  | Slice 4    | planned     |
 | 8   | Document version history           | Slice 5    | planned     |
 | 9   | Full text search                   | Slice 6    | planned     |
@@ -105,12 +105,22 @@ Thicken the auth strand: TOTP multi factor enrollment and login challenge, rate 
 
 ## Slice 3: Administration & account lifecycle
 
-### 6. Administration & account lifecycle · needs a decision
+### 6. Administration & account lifecycle · in-progress
 
 Let admins run the user base: change roles and clearances, disable and re-enable accounts, force logout, and reset credentials, with every privilege change itself written to the audit log and its effect on live sessions and existing shares defined.
 **Done when:** an admin can change a user's clearance or role, disable the account, and every one of those actions is audited with the before and after values.
 
-- [ ] Design it (spec): `/architect administration & account lifecycle`
+- [x] Design it (spec): `/architect administration & account lifecycle`
+- [x] Build it: `/develop administration & account lifecycle`
+  - [x] PATCH thread end to end: role and clearance mutation, before and after audit, self demotion guard (AC-1, AC-2, AC-8, AC-9)
+  - [x] Disable and enable: conflict checks, self disable guard, pending challenge deletion (AC-3, AC-6, AC-9)
+  - [x] Session revoke and password reset: shared revoke helper, lockout clear, challenge deletion (AC-4, AC-5, AC-9)
+  - [x] Test alignment and session behavior verification across the full suite (AC-1, AC-3, AC-5, AC-6, AC-7, AC-8, AC-9)
+- [x] Verify it: `/check verify administration & account lifecycle`
+- [x] Test it: `/test administration & account lifecycle`
+- [x] Review it (fresh model): `/check review administration & account lifecycle`
+- [x] Document it: `/document administration & account lifecycle`
+      Spec [0005](../specs/0005-administration-account-lifecycle/index.md) · code in `app/api/users.py`, `app/services/users.py`
 
 ## Slice 4: Auditor access & log verification
 
@@ -185,6 +195,8 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Document export and printing**: controlled export of documents out of the system · needs a decision · GA
 - **WebAuthn or hardware keys**: phishing resistant second factor to replace or augment TOTP · needs a decision
 - **MFA recovery codes**: backup codes for lost authenticators; admin reset covers this for now · needs a decision
+- **Step up re authentication for admin actions**: a fresh password or TOTP prompt before destructive admin operations · from spec 0005 · needs a decision
+- **Forced password change flag**: a permanent "must change password" account state for operations · from spec 0005 · needs a decision
 
 ## Legend
 

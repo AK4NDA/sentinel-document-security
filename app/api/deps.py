@@ -52,6 +52,11 @@ GATE_ACTIONS: dict[tuple[str, str], str] = {
     ("DELETE", "/v1/documents/{doc_id}"): "document.delete",
     ("POST", "/v1/users"): "user.create",
     ("GET", "/v1/users"): "user.list",
+    ("PATCH", "/v1/users/{user_id}"): "user.privilege_update",
+    ("POST", "/v1/users/{user_id}/disable"): "user.disabled",
+    ("POST", "/v1/users/{user_id}/enable"): "user.enabled",
+    ("POST", "/v1/users/{user_id}/sessions/revoke"): "session.revoke_all",
+    ("POST", "/v1/users/{user_id}/reset-password"): "user.password_reset",
     ("POST", "/v1/users/{user_id}/mfa/reset"): "mfa.reset",
 }
 
