@@ -155,7 +155,7 @@ Keep every prior version of a document on edit, each with its own classification
   - [x] Per version content download with hash verify (AC-4, AC-5, AC-9)
   - [x] Restore endpoint appending a new version (AC-6 to AC-8, AC-9)
   - [x] Route registration, `GATE_ACTIONS`, full test suite (AC-1 to AC-10)
-- [ ] Verify it: `/check verify document version history`
+- [x] Verify it: `/check verify document version history`
 - [ ] Test it: `/test document version history`
 - [ ] Review it (fresh model): `/check review document version history`
 - [ ] Document it: `/document document version history`
