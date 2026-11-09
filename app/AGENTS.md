@@ -17,6 +17,8 @@ Layered monolith. Routers in `api/` are thin: they parse requests, call one serv
 | `services/documents.py` | Document loop: upload, read, version, delete with policy + audit |
 | `services/mfa.py` | TOTP enrollment, pending challenge tokens, verify exchange |
 | `services/sessions.py` | Opaque token issue, SHA-256 storage, sliding expiry, revocation |
+| `services/search.py` | Full text search over sealed `search_text` extracts |
+| `services/text_extract.py` | Plaintext extraction for search indexing (pypdf, python-docx, openpyxl, python-pptx) |
 | `security/encryption.py` | AES-GCM master key blob encryption |
 | `models/audit_log.py` | Append only audit table; `prev_hash` unique prevents chain forks |
 | `cli.py` | `create-admin` bootstrap command |
@@ -29,6 +31,7 @@ Layered monolith. Routers in `api/` are thin: they parse requests, call one serv
 - Classification is an `IntEnum` rank 1 to 5 (`UNCLASSIFIED` to `TOP_SECRET`); read allowed when `user.clearance >= classification`, writes pinned to the writer's clearance (strict no write down).
 - `mfa_challenges` and sessions store only SHA-256 token hashes; TOTP secrets are AES-GCM sealed on the user row.
 - Account lockout (5 failures, 15 minutes) is shared across login, MFA verify, and enroll confirm via `services/lockout.py`.
+- `document_versions.search_text` is an AES-GCM sealed plaintext extract capped at 2 MB, written on upload/edit/restore; `services/search.py` filters candidates by clearance in SQL, then decrypts and token matches in memory. Extraction is CPU bound and runs via `asyncio.to_thread`.
 
 ## Gotchas
 
@@ -45,5 +48,8 @@ Layered monolith. Routers in `api/` are thin: they parse requests, call one serv
 - [0004 MFA and login protection](../docs/specs/0004-mfa-login-protection/index.md)
 - [0005 administration and account lifecycle](../docs/specs/0005-administration-account-lifecycle/index.md)
 - [0006 auditor access and log verification](../docs/specs/0006-auditor-access-log-verification.md)
+- [0007 document version history](../docs/specs/0007-document-version-history/index.md)
+- [0008 full text search](../docs/specs/0008-full-text-search/index.md)
+- [0009 per user document sharing](../docs/specs/0009-per-user-document-sharing/index.md)
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

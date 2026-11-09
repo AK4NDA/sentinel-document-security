@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import MfaChallenge, User, UserRole
 from app.models import Session as UserSession
-from app.schemas.users import UserAdminPatch, UserCreate
+from app.schemas.users import UserAdminPatch, UserCreate, UserLookupOut
 from app.security import passwords
 from app.services import audit
 
@@ -253,6 +253,42 @@ async def list_users(db: AsyncSession, actor: User) -> list[User]:
             **snapshot,
         )
         return list(rows)
+
+    return await audit.transact(db, attempt)
+
+
+async def lookup_users(
+    db: AsyncSession, actor: User, *, prefix: str, limit: int, path: str
+) -> list[UserLookupOut]:
+    """Active ``user`` role accounts matching a username prefix (spec 0009 AC-13)."""
+    escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    rows = (
+        await db.execute(
+            select(User.id, User.username)
+            .where(
+                User.is_active.is_(True),
+                User.role == UserRole.USER,
+                User.username.ilike(f"{escaped}%", escape="\\"),
+            )
+            .order_by(User.username, User.id)
+            .limit(limit)
+        )
+    ).all()
+    # Plain values, not ORM rows: a chain fork rollback would expire them.
+    users = [UserLookupOut(id=user_id, username=username) for user_id, username in rows]
+    snapshot = audit.actor_kwargs(actor)
+
+    async def attempt(session: AsyncSession) -> list[UserLookupOut]:
+        await audit.append(
+            session,
+            action="user.lookup",
+            outcome="allowed",
+            target_type="endpoint",
+            target_id=path,
+            details={"username": prefix, "limit": limit},
+            **snapshot,
+        )
+        return users
 
     return await audit.transact(db, attempt)
 

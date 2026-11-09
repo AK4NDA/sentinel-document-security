@@ -1,7 +1,7 @@
 # 0005. Administration and account lifecycle
 
 **Date**: 2026-11-08
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

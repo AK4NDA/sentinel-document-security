@@ -162,6 +162,66 @@
       "sourceType": "github",
       "skillPath": "skills/test/SKILL.md",
       "computedHash": "6b742c465b3e9cec898bf3621ec555faefb41fdcc0cbbf43ec0a6041fbdcb6be"
+    },
+    "pdf": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/pdf/SKILL.md",
+      "computedHash": "d1c7caf5f35eb7d37877dd7fc33a095037be2b34fb5d2f7f4d43bde3165bb4ee"
+    },
+    "docx": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/docx/SKILL.md",
+      "computedHash": "9e8202e2524a9ed87da67a5b3eaa76e8e6038f4171f8251ad6aaefd34e82a3df"
+    },
+    "xlsx": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/xlsx/SKILL.md",
+      "computedHash": "caa1e1c29cf974c8d874bf3d0a70838445e7342b570f856ddb3e4a21ef7c7e8b"
+    },
+    "pptx": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/pptx/SKILL.md",
+      "computedHash": "b60bd282c6e01297f0eefe71594d1756dbf60a584f524c04a803ec6950b7fba2"
+    },
+    "documents": {
+      "source": "magnus919/agent-skills",
+      "sourceType": "github",
+      "skillPath": "documents/SKILL.md",
+      "computedHash": "210e8572af3b6ed9afe2ebc64ebde645c591fba6526ac3ab570c57d8e568e7ae"
+    },
+    "document-generator": {
+      "source": "lirrensi/skills-hoard",
+      "sourceType": "github",
+      "skillPath": "content/document-generator/SKILL.md",
+      "computedHash": "1be304bc3f1ddba2c5a37016117967404475f4b1121ef7255af0896f5abc9d86"
+    },
+    "py-git-hooks": {
+      "source": "l-mb/python-refactoring-skills",
+      "sourceType": "github",
+      "skillPath": "skills/py-git-hooks/SKILL.md",
+      "computedHash": "85450d0144e0140b06130513772a9dc9a5719c3c85cd5789fbac3a51658c6fac"
+    },
+    "git-hooks-setup": {
+      "source": "wu529778790/shenzjd-skills",
+      "sourceType": "github",
+      "skillPath": "git-hooks-setup/SKILL.md",
+      "computedHash": "62468233e18f953a498ef54d41d0dfac1acf2fd859b4682a5b829921b51b451b"
+    },
+    "git-hooks": {
+      "source": "narenaryan/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/git/git-hooks/SKILL.md",
+      "computedHash": "fc6a10af4e4b59fa03bb16c77a71dc15d6ed70f7628c80afa7f88e291bb841a6"
+    },
+    "setup-pre-commit": {
+      "source": "andrewsrigom/agent-skills",
+      "sourceType": "github",
+      "skillPath": "engineering/setup-pre-commit/SKILL.md",
+      "computedHash": "ed5932fed5d362d536dadd55fe478f3040007c09a591a92d943dc69aa65beebd"
     }
   }
 }

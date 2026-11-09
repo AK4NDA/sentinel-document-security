@@ -20,7 +20,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 7   | Auditor access & log verification  | Slice 4    | done        |
 | 8   | Document version history           | Slice 5    | done        |
 | 9   | Full text search                   | Slice 6    | done        |
-| 10  | Per user sharing                   | Slice 7    | planned     |
+| 10  | Per user sharing                   | Slice 7    | in-progress |
 | 11  | Access alerts                      | Slice 8    | planned     |
 | 12  | Runnable demo packaging · Alpha    | Slice 9    | planned     |
 | 13  | Maintenance & retention            | Hardening  | planned     |
@@ -58,7 +58,7 @@ Core entities every feature builds on: users, roles, clearances, classification 
   - [x] Models and shared column helpers (enums, UUID PKs, timestamps)
   - [x] Alembic migration for all seven tables including the circular FK
   - [x] Constraint, cascade, and ordering tests on SQLite and Postgres
-- [ ] Verify it: `/check verify data model`
+- [x] Verify it: `/check verify data model`
 - [x] Test it: `/test data model`
 - [x] Review it (fresh model): `/check review data model`
 - [x] Document it: `/document data model`
@@ -182,18 +182,28 @@ Let users find documents by content, with results filtered by the caller's clear
 
 ## Slice 7: Per user sharing
 
-### 10. Per user sharing · needs a decision
+### 10. Per user sharing · in progress
 
 Layer named user grants on top of the policy model so a document can be shared with specific people beyond the default clearance rules, with grant and revoke audited and the interaction with classification levels defined.
 **Done when:** a user can share a document with a named colleague who could not otherwise read it, the grant appears in the audit log, revoking it blocks further access, and grants never override a lower classification ceiling.
 
-- [ ] Design it (spec): `/architect per user sharing`
+- [x] Design it (spec): `/architect per user sharing`
+- [x] Build it: `/develop per user sharing`
+  - [x] Share management: grant, revoke, and list endpoints with eligibility checks and audit actions (AC-1, AC-3 to AC-5, AC-8 to AC-10, AC-12)
+  - [x] Grantee read paths: share aware policy for document meta, content, and all versions with `via_share` audit details (AC-2, AC-3, AC-7, AC-15)
+  - [x] Discovery surfaces: `GET /v1/shares/mine` and `GET /v1/users/lookup` with rate limit setting (AC-6, AC-13)
+  - [x] Test suite: all AC scenarios including admin interaction, search non leak, concurrency, and audit assertions (AC-1 to AC-15)
+- [x] Verify it: `/check verify per user sharing`
+- [ ] Test it: `/test per user sharing`
+- [ ] Review it (fresh model): `/check review per user sharing`
+- [ ] Document it: `/document per user sharing`
+      Spec [0009](../specs/0009-per-user-document-sharing/index.md) · code in `app/services/shares.py`, `app/api/shares.py`, `app/api/documents.py`, `app/api/users.py`
 
 ## Slice 8: Access alerts
 
 ### 11. Access alerts · needs a decision
 
-Surface the interesting events: denied attempts, access to the most sensitive classifications, and privilege changes generate alert records that admins and auditors can review. The channel decision (in app records versus email) is the open question; recommend in app records to keep the demo self contained.
+Surface the interesting events: denied attempts, access to the most sensitive classifications, privilege changes, and failed audit chain verifications generate alert records that admins and auditors can review. The channel decision (in app records versus email) is the open question; recommend in app records to keep the demo self contained.
 **Done when:** a denied access attempt and a Top Secret read each produce an alert record visible to admins and auditors, and alert generation is itself audited.
 
 - [ ] Design it (spec): `/architect access alerts`
@@ -211,7 +221,7 @@ Make the whole thing boot with one Docker command: container images for the API 
 
 ### 13. Maintenance & retention · needs a decision
 
-Keep the system tidy over time: expired and consumed `mfa_challenges` rows, stale sessions, and orphaned encrypted blobs left behind by document deletes and version churn get a cleanup story, either a scheduled job or an explicit retention policy. Surfaced by spec 0004 and spec 0003 follow-ups.
+Keep the system tidy over time: expired and consumed `mfa_challenges` rows, stale sessions, and orphaned encrypted blobs left behind by document deletes and version churn get a cleanup story, either a scheduled job or an explicit retention policy. Blob collection must dedupe by `blob_path` across all `document_versions` rows since restores share paths. Surfaced by spec 0004, spec 0003, and spec 0007 follow ups.
 **Done when:** expired challenges and orphaned blobs are removed by a defined mechanism, the cleanup itself is audited or logged, and no live data is ever collected.
 
 - [ ] Design it (spec): `/architect maintenance & retention`
@@ -233,6 +243,8 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Document export and printing**: controlled export of documents out of the system · needs a decision · GA
 - **WebAuthn or hardware keys**: phishing resistant second factor to replace or augment TOTP · needs a decision
 - **MFA recovery codes**: backup codes for lost authenticators; admin reset covers this for now · needs a decision
+- **Search at scale**: blind index or per clearance tier indexes plus relevance ranking if the corpus outgrows the current scan · from spec 0008 · needs a decision
+- **Production deployment hardening**: KMS or HSM key management, object storage, and a shared rate limit store for multi worker deploys · from spec 0001 · needs a decision
 - **Step up re authentication for admin actions**: a fresh password or TOTP prompt before destructive admin operations · from spec 0005 · needs a decision
 - **Forced password change flag**: a permanent "must change password" account state for operations · from spec 0005 · needs a decision
 
