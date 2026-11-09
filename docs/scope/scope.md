@@ -18,7 +18,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 5   | MFA & login protection             | Slice 2    | done        |
 | 6   | Administration & account lifecycle | Slice 3    | done        |
 | 7   | Auditor access & log verification  | Slice 4    | done        |
-| 8   | Document version history           | Slice 5    | planned     |
+| 8   | Document version history           | Slice 5    | in-progress |
 | 9   | Full text search                   | Slice 6    | planned     |
 | 10  | Per user sharing                   | Slice 7    | planned     |
 | 11  | Access alerts                      | Slice 8    | planned     |
@@ -144,12 +144,22 @@ Give the auditor role its own surface: read access to the audit log, an endpoint
 
 ## Slice 5: Document version history
 
-### 8. Document version history · needs a decision
+### 8. Document version history · in-progress
 
 Keep every prior version of a document on edit, each with its own classification and authorship, support reading and restoring an older version, and audit every version event. Decide how classification changes across versions interact with the write down rule.
 **Done when:** editing a document preserves the old version, each version carries its own classification, a user can restore an earlier version, and the chain of custody stays intact in the log.
 
-- [ ] Design it (spec): `/architect document version history`
+- [x] Design it (spec): `/architect document version history`
+- [x] Build it: `/develop document version history`
+  - [x] Version list endpoint with per version clearance filter and audit (AC-1 to AC-3, AC-9)
+  - [x] Per version content download with hash verify (AC-4, AC-5, AC-9)
+  - [x] Restore endpoint appending a new version (AC-6 to AC-8, AC-9)
+  - [x] Route registration, `GATE_ACTIONS`, full test suite (AC-1 to AC-10)
+- [x] Verify it: `/check verify document version history`
+- [x] Test it: `/test document version history`
+- [x] Review it (fresh model): `/check review document version history`
+- [x] Document it: `/document document version history`
+      Spec [0007](../specs/0007-document-version-history/index.md) · code in `app/api/documents.py`, `app/services/documents.py`
 
 ## Slice 6: Full text search
 

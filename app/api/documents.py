@@ -7,6 +7,7 @@ from fastapi import (
     Depends,
     File,
     Form,
+    Path,
     Response,
     UploadFile,
     status,
@@ -16,7 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_role
 from app.core.database import get_db
 from app.models import User, UserRole
-from app.schemas.documents import DocumentListResponse, DocumentMeta
+from app.schemas.documents import (
+    DocumentListResponse,
+    DocumentMeta,
+    VersionListResponse,
+)
 from app.services import documents as documents_service
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
@@ -98,6 +103,50 @@ async def create_version(
         title=title,
         description=description,
     )
+    return documents_service.to_meta(doc)
+
+
+@router.get("/{doc_id}/versions", response_model=VersionListResponse)
+async def list_versions(
+    doc_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_role("document.versions_list", OFFICER)),
+):
+    return await documents_service.list_versions(db, actor, doc_id)
+
+
+@router.get("/{doc_id}/versions/{version_number}/content")
+async def get_version_content(
+    doc_id: uuid.UUID,
+    version_number: int = Path(ge=1),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_role("document.version_download", OFFICER)),
+):
+    plaintext, filename, mime = await documents_service.read_version_content(
+        db, actor, doc_id, version_number
+    )
+    return Response(
+        content=plaintext,
+        media_type=mime,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(plaintext)),
+        },
+    )
+
+
+@router.post(
+    "/{doc_id}/versions/{version_number}/restore",
+    response_model=DocumentMeta,
+    status_code=status.HTTP_201_CREATED,
+)
+async def restore_version(
+    doc_id: uuid.UUID,
+    version_number: int = Path(ge=1),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_role("document.version_restore", OFFICER)),
+):
+    doc = await documents_service.restore(db, actor, doc_id, version_number)
     return documents_service.to_meta(doc)
 
 

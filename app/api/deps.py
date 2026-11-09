@@ -49,6 +49,13 @@ GATE_ACTIONS: dict[tuple[str, str], str] = {
     ("GET", "/v1/documents/{doc_id}"): "document.read",
     ("GET", "/v1/documents/{doc_id}/content"): "document.download",
     ("POST", "/v1/documents/{doc_id}/versions"): "document.edit",
+    ("GET", "/v1/documents/{doc_id}/versions"): "document.versions_list",
+    ("GET", "/v1/documents/{doc_id}/versions/{version_number}/content"): (
+        "document.version_download"
+    ),
+    ("POST", "/v1/documents/{doc_id}/versions/{version_number}/restore"): (
+        "document.version_restore"
+    ),
     ("DELETE", "/v1/documents/{doc_id}"): "document.delete",
     ("POST", "/v1/users"): "user.create",
     ("GET", "/v1/users"): "user.list",

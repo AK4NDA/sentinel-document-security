@@ -1360,3 +1360,482 @@ async def test_edit_rejections_are_audited(client, session_factory):
     rows = await denied_rows(session_factory, "document.edit")
     assert len(rows) == 1
     assert rows[0].details["reason"] == "unsupported_media_type"
+
+
+# Spec 0007: document version history (AC-1 through AC-10)
+
+
+async def edit_doc(client: AsyncClient, doc_id: str, content: bytes, filename="v.txt"):
+    return await client.post(
+        f"/v1/documents/{doc_id}/versions",
+        files={"file": (filename, content, "text/plain")},
+    )
+
+
+async def test_version_list_order_fields_and_audit(client, session_factory):
+    """AC-1, AC-9: newest first, full VersionMeta shape, one allowed audit row."""
+    await make_user(session_factory, "vowner1", clearance=ClassificationLevel.SECRET)
+    await auth_client(client, "vowner1")
+    upload = await upload_doc(client, content=b"v1 bytes")
+    doc_id = upload.json()["id"]
+    await edit_doc(client, doc_id, b"v2 bytes")
+    await edit_doc(client, doc_id, b"v3 bytes")
+
+    response = await client.get(f"/v1/documents/{doc_id}/versions")
+
+    assert response.status_code == 200, response.text
+    versions = response.json()["versions"]
+    assert [v["version_number"] for v in versions] == [3, 2, 1]
+    assert [v["is_current"] for v in versions] == [True, False, False]
+    top = versions[0]
+    assert top["classification"] == 4
+    assert top["size_bytes"] == len(b"v3 bytes")
+    assert top["mime_type"] == "text/plain"
+    assert top["created_by"] == "vowner1"
+    assert top["created_at"]
+
+    rows = await audit_rows(session_factory)
+    list_rows = [r for r in rows if r.action == "document.versions_list"]
+    assert len(list_rows) == 1
+    assert list_rows[0].outcome == "allowed"
+    assert list_rows[0].target_type == "document"
+    assert list_rows[0].target_id == doc_id
+
+
+async def test_version_list_filters_above_clearance(client, session_factory):
+    """AC-2, AC-5: versions above clearance are hidden and undownloadable."""
+    await make_user(session_factory, "vowner2", clearance=ClassificationLevel.SECRET)
+    await auth_client(client, "vowner2")
+    upload = await upload_doc(client, content=b"low")
+    doc_id = upload.json()["id"]
+    await edit_doc(client, doc_id, b"current")
+
+    # Simulate a version written under a higher clearance (clearance changes
+    # through administration can produce mixed classifications per spec 0007).
+    async with session_factory() as session:
+        old = (
+            await session.execute(
+                select(DocumentVersion).where(
+                    DocumentVersion.document_id == uuid.UUID(doc_id),
+                    DocumentVersion.version_number == 1,
+                )
+            )
+        ).scalar_one()
+        old.classification = ClassificationLevel.TOP_SECRET
+        await session.commit()
+
+    listing = await client.get(f"/v1/documents/{doc_id}/versions")
+    assert listing.status_code == 200
+    assert [v["version_number"] for v in listing.json()["versions"]] == [2]
+
+    denied = await client.get(f"/v1/documents/{doc_id}/versions/1/content")
+    assert denied.status_code == 403
+    rows = await denied_rows(session_factory, "document.version_download")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "clearance"
+    assert rows[0].details["version_number"] == 1
+
+
+async def test_version_list_denied_below_current_clearance(client, session_factory):
+    """AC-3, AC-9: read gate denial audited under document.versions_list."""
+    await make_user(session_factory, "vowner3", clearance=ClassificationLevel.SECRET)
+    await make_user(session_factory, "vlow", clearance=ClassificationLevel.CONFIDENTIAL)
+    owner_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    await auth_client(owner_client, "vowner3")
+    upload = await upload_doc(owner_client, content=b"secret")
+    doc_id = upload.json()["id"]
+    await owner_client.aclose()
+
+    await auth_client(client, "vlow")
+    response = await client.get(f"/v1/documents/{doc_id}/versions")
+    assert response.status_code == 403
+    rows = await denied_rows(session_factory, "document.versions_list")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "clearance"
+
+
+async def test_version_content_roundtrip_and_audit(client, session_factory):
+    """AC-4, AC-8, AC-9: old bytes download as attachment under own action."""
+    await make_user(session_factory, "vowner4", clearance=ClassificationLevel.SECRET)
+    await auth_client(client, "vowner4")
+    upload = await upload_doc(client, content=b"first version", title="History Doc")
+    doc_id = upload.json()["id"]
+    await edit_doc(client, doc_id, b"second version")
+
+    response = await client.get(f"/v1/documents/{doc_id}/versions/1/content")
+
+    assert response.status_code == 200, response.text
+    assert response.content == b"first version"
+    assert "attachment" in response.headers["content-disposition"]
+    assert response.headers["content-disposition"].endswith('.txt"')
+
+    rows = await audit_rows(session_factory)
+    dl_rows = [r for r in rows if r.action == "document.version_download"]
+    assert len(dl_rows) == 1
+    assert dl_rows[0].outcome == "allowed"
+    assert dl_rows[0].details["version_number"] == 1
+
+
+async def test_version_content_missing_version_and_document(client, session_factory):
+    """AC-5, AC-9: 404s audited with version_number detail."""
+    await make_user(session_factory, "vowner5")
+    await auth_client(client, "vowner5")
+    upload = await upload_doc(client, content=b"only")
+    doc_id = upload.json()["id"]
+
+    missing_version = await client.get(f"/v1/documents/{doc_id}/versions/99/content")
+    assert missing_version.status_code == 404
+    missing_doc = await client.get(f"/v1/documents/{uuid.uuid4()}/versions/1/content")
+    assert missing_doc.status_code == 404
+    missing_list = await client.get(f"/v1/documents/{uuid.uuid4()}/versions")
+    assert missing_list.status_code == 404
+
+    rows = await denied_rows(session_factory, "document.version_download")
+    assert len(rows) == 2
+    assert {r.details.get("reason") for r in rows} == {"not_found"}
+    versioned = [r for r in rows if r.details.get("version_number") is not None]
+    assert [r.details["version_number"] for r in versioned] == [99]
+    list_rows = await denied_rows(session_factory, "document.versions_list")
+    assert len(list_rows) == 1
+    assert list_rows[0].details["reason"] == "not_found"
+
+
+async def test_version_content_rejects_bad_version_number(client, session_factory):
+    """AC-4 surface: version_number must be a positive integer (422)."""
+    await make_user(session_factory, "vowner6")
+    await auth_client(client, "vowner6")
+    upload = await upload_doc(client, content=b"x")
+    doc_id = upload.json()["id"]
+
+    for bad in ("0", "-1", "abc"):
+        response = await client.get(f"/v1/documents/{doc_id}/versions/{bad}/content")
+        assert response.status_code == 422, (bad, response.status_code)
+        restore = await client.post(f"/v1/documents/{doc_id}/versions/{bad}/restore")
+        assert restore.status_code == 422, (bad, restore.status_code)
+
+
+async def test_restore_appends_version_and_preserves_history(client, session_factory):
+    """AC-6, AC-7, AC-8, AC-9: restore copies content fields, moves pointer."""
+    await make_user(session_factory, "vowner7", clearance=ClassificationLevel.SECRET)
+    await auth_client(client, "vowner7")
+    upload = await upload_doc(client, content=b"alpha", title="Restore Me")
+    doc_id = upload.json()["id"]
+    await edit_doc(client, doc_id, b"beta")
+    await edit_doc(client, doc_id, b"gamma")
+
+    restore = await client.post(f"/v1/documents/{doc_id}/versions/1/restore")
+
+    assert restore.status_code == 201, restore.text
+    assert restore.json()["classification"] == 4
+
+    content = await client.get(f"/v1/documents/{doc_id}/content")
+    assert content.content == b"alpha"
+
+    async with session_factory() as session:
+        doc = (
+            await session.execute(select(Document).where(Document.id == uuid.UUID(doc_id)))
+        ).scalar_one()
+        versions = (
+            (
+                await session.execute(
+                    select(DocumentVersion)
+                    .where(DocumentVersion.document_id == doc.id)
+                    .order_by(DocumentVersion.version_number)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [v.version_number for v in versions] == [1, 2, 3, 4]
+        new_version = versions[3]
+        source = versions[0]
+        assert doc.current_version_id == new_version.id
+        assert new_version.content_sha256 == source.content_sha256
+        assert new_version.blob_path == source.blob_path
+        assert new_version.size_bytes == source.size_bytes
+        assert new_version.mime_type == source.mime_type
+        assert new_version.key_id == source.key_id
+        assert new_version.key_version == source.key_version
+        assert new_version.classification == ClassificationLevel.SECRET
+        assert new_version.created_by == doc.owner_id
+
+    listing = await client.get(f"/v1/documents/{doc_id}/versions")
+    versions = listing.json()["versions"]
+    assert [v["version_number"] for v in versions] == [4, 3, 2, 1]
+    assert versions[0]["is_current"] is True
+    assert all(v["is_current"] is False for v in versions[1:])
+
+    # Prior versions still downloadable after restore.
+    for n, expected in ((1, b"alpha"), (2, b"beta"), (3, b"gamma"), (4, b"alpha")):
+        dl = await client.get(f"/v1/documents/{doc_id}/versions/{n}/content")
+        assert dl.status_code == 200
+        assert dl.content == expected
+
+    rows = await audit_rows(session_factory)
+    restore_rows = [r for r in rows if r.action == "document.version_restore"]
+    assert len(restore_rows) == 1
+    assert restore_rows[0].outcome == "allowed"
+    assert restore_rows[0].details == {
+        "source_version_number": 1,
+        "version_number": 4,
+    }
+
+
+async def test_restore_current_version_409_unaudited(client, session_factory):
+    """AC-7: restoring the live version conflicts without an audit row."""
+    await make_user(session_factory, "vowner8")
+    await auth_client(client, "vowner8")
+    upload = await upload_doc(client, content=b"only")
+    doc_id = upload.json()["id"]
+
+    response = await client.post(f"/v1/documents/{doc_id}/versions/1/restore")
+
+    assert response.status_code == 409
+    rows = await denied_rows(session_factory, "document.version_restore")
+    assert rows == []
+    allowed = [
+        r for r in await audit_rows(session_factory) if r.action == "document.version_restore"
+    ]
+    assert allowed == []
+
+
+async def test_restore_non_owner_404_audited(client, session_factory):
+    """AC-7, AC-9: non owner gets not_owner_or_missing denial."""
+    await make_user(session_factory, "vowner9")
+    await make_user(session_factory, "vother")
+    owner_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    await auth_client(owner_client, "vowner9")
+    upload = await upload_doc(owner_client, content=b"mine")
+    doc_id = upload.json()["id"]
+    await owner_client.aclose()
+
+    await auth_client(client, "vother")
+    response = await client.post(f"/v1/documents/{doc_id}/versions/1/restore")
+
+    assert response.status_code == 404
+    rows = await denied_rows(session_factory, "document.version_restore")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "not_owner_or_missing"
+    assert rows[0].details["version_number"] == 1
+
+
+async def test_restore_missing_version_404_audited(client, session_factory):
+    """AC-7, AC-9: unknown version_number is a 404 under the action name."""
+    await make_user(session_factory, "vowner10")
+    await auth_client(client, "vowner10")
+    upload = await upload_doc(client, content=b"x")
+    doc_id = upload.json()["id"]
+
+    response = await client.post(f"/v1/documents/{doc_id}/versions/77/restore")
+
+    assert response.status_code == 404
+    rows = await denied_rows(session_factory, "document.version_restore")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "not_found"
+    assert rows[0].details["version_number"] == 77
+
+
+async def test_restore_denied_when_owner_clearance_dropped(client, session_factory):
+    """AC-7: the document read gate applies to restore before source lookup."""
+    user = await make_user(session_factory, "vowner11", clearance=ClassificationLevel.SECRET)
+    await auth_client(client, "vowner11")
+    upload = await upload_doc(client, content=b"v1")
+    doc_id = upload.json()["id"]
+    await edit_doc(client, doc_id, b"v2")
+
+    async with session_factory() as session:
+        row = (await session.execute(select(User).where(User.id == user.id))).scalar_one()
+        row.clearance = ClassificationLevel.CONFIDENTIAL
+        await session.commit()
+
+    response = await client.post(f"/v1/documents/{doc_id}/versions/1/restore")
+
+    assert response.status_code == 403
+    rows = await denied_rows(session_factory, "document.version_restore")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "clearance"
+
+
+async def test_restore_denied_when_source_above_clearance(client, session_factory):
+    """AC-7: source version classification gates restore independently."""
+    await make_user(session_factory, "vowner12", clearance=ClassificationLevel.SECRET)
+    await auth_client(client, "vowner12")
+    upload = await upload_doc(client, content=b"low")
+    doc_id = upload.json()["id"]
+    await edit_doc(client, doc_id, b"current")
+
+    async with session_factory() as session:
+        old = (
+            await session.execute(
+                select(DocumentVersion).where(
+                    DocumentVersion.document_id == uuid.UUID(doc_id),
+                    DocumentVersion.version_number == 1,
+                )
+            )
+        ).scalar_one()
+        old.classification = ClassificationLevel.TOP_SECRET
+        await session.commit()
+
+    response = await client.post(f"/v1/documents/{doc_id}/versions/1/restore")
+
+    assert response.status_code == 403
+    rows = await denied_rows(session_factory, "document.version_restore")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "clearance"
+    assert rows[0].details["version_number"] == 1
+
+
+async def test_version_endpoints_role_and_mfa_gates(client, session_factory):
+    """AC-10: admin, auditor, and unenrolled callers denied on all three."""
+    await make_user(session_factory, "vowner13")
+    await auth_client(client, "vowner13")
+    upload = await upload_doc(client, content=b"x")
+    doc_id = upload.json()["id"]
+
+    admin_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    await make_user(session_factory, "vadmin", role=UserRole.ADMIN)
+    await auth_client(admin_client, "vadmin")
+    auditor_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    await make_user(session_factory, "vauditor", role=UserRole.AUDITOR)
+    await auth_client(auditor_client, "vauditor")
+
+    calls = [
+        ("get", f"/v1/documents/{doc_id}/versions"),
+        ("get", f"/v1/documents/{doc_id}/versions/1/content"),
+        ("post", f"/v1/documents/{doc_id}/versions/1/restore"),
+    ]
+    for http in (admin_client, auditor_client):
+        for method, url in calls:
+            response = await getattr(http, method)(url)
+            assert response.status_code == 403, (method, url, response.status_code)
+    await admin_client.aclose()
+    await auditor_client.aclose()
+
+    await make_user(session_factory, "vunenrolled", enrolled=False)
+    await login(client, "vunenrolled")
+    for method, url in calls:
+        response = await getattr(client, method)(url)
+        assert response.status_code == 403, (method, url, response.status_code)
+
+    for action in (
+        "document.versions_list",
+        "document.version_download",
+        "document.version_restore",
+    ):
+        role_rows = [
+            r
+            for r in await denied_rows(session_factory, action)
+            if r.details.get("reason") == "role"
+        ]
+        assert len(role_rows) == 2
+        gate_rows = [
+            r
+            for r in await audit_rows(session_factory)
+            if r.action == action and r.details.get("reason") == "mfa_enrollment_required"
+        ]
+        assert len(gate_rows) == 1
+
+
+async def tamper_version_blob(
+    session_factory, doc_id: str, version_number: int, plaintext=b"tampered"
+):
+    """Replace a version's stored blob with valid encryption of other bytes."""
+    from app.security import encryption
+
+    async with session_factory() as session:
+        version = (
+            await session.execute(
+                select(DocumentVersion).where(
+                    DocumentVersion.document_id == uuid.UUID(doc_id),
+                    DocumentVersion.version_number == version_number,
+                )
+            )
+        ).scalar_one()
+        path = get_settings().upload_dir / version.blob_path
+    path.write_bytes(encryption.seal(plaintext))
+
+
+async def test_version_content_readable_by_cleared_non_owner(client, session_factory):
+    """AC-4, AC-5: any sufficiently cleared reader may fetch old versions."""
+    await make_user(session_factory, "vowner14", clearance=ClassificationLevel.SECRET)
+    await make_user(session_factory, "vreader", clearance=ClassificationLevel.SECRET)
+    owner_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    await auth_client(owner_client, "vowner14")
+    upload = await upload_doc(owner_client, content=b"owner v1")
+    doc_id = upload.json()["id"]
+    await edit_doc(owner_client, doc_id, b"owner v2")
+    await owner_client.aclose()
+
+    await auth_client(client, "vreader")
+    listing = await client.get(f"/v1/documents/{doc_id}/versions")
+    assert listing.status_code == 200
+    assert listing.json()["versions"][0]["created_by"] == "vowner14"
+
+    content = await client.get(f"/v1/documents/{doc_id}/versions/1/content")
+    assert content.status_code == 200
+    assert content.content == b"owner v1"
+
+
+async def test_version_content_denied_when_document_unreadable(client, session_factory):
+    """AC-5: the document read gate applies to version downloads too."""
+    await make_user(session_factory, "vowner15", clearance=ClassificationLevel.SECRET)
+    await make_user(session_factory, "vreader2", clearance=ClassificationLevel.CONFIDENTIAL)
+    owner_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    await auth_client(owner_client, "vowner15")
+    upload = await upload_doc(owner_client, content=b"secret v1")
+    doc_id = upload.json()["id"]
+    await owner_client.aclose()
+
+    await auth_client(client, "vreader2")
+    response = await client.get(f"/v1/documents/{doc_id}/versions/1/content")
+
+    assert response.status_code == 403
+    rows = await denied_rows(session_factory, "document.version_download")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "clearance"
+
+
+async def test_version_content_integrity_mismatch_500_audited(client, session_factory):
+    """AC-4: sha256 mismatch after decrypt is a 500 with audited denial."""
+    await make_user(session_factory, "vowner16")
+    await auth_client(client, "vowner16")
+    upload = await upload_doc(client, content=b"original bytes")
+    doc_id = upload.json()["id"]
+
+    await tamper_version_blob(session_factory, doc_id, 1)
+
+    response = await client.get(f"/v1/documents/{doc_id}/versions/1/content")
+
+    assert response.status_code == 500
+    rows = await denied_rows(session_factory, "document.version_download")
+    assert len(rows) == 1
+    assert rows[0].details["reason"] == "integrity_mismatch"
+    assert rows[0].details["version_number"] == 1
+
+
+async def test_restore_does_not_verify_source_blob(client, session_factory):
+    """AC-6 invariant: restore copies fields without decrypting; the bad
+    blob surfaces as an integrity failure at read time instead."""
+    await make_user(session_factory, "vowner17")
+    await auth_client(client, "vowner17")
+    upload = await upload_doc(client, content=b"good bytes")
+    doc_id = upload.json()["id"]
+    await edit_doc(client, doc_id, b"newer bytes")
+
+    await tamper_version_blob(session_factory, doc_id, 1)
+
+    restore = await client.post(f"/v1/documents/{doc_id}/versions/1/restore")
+    assert restore.status_code == 201, restore.text
+
+    content = await client.get(f"/v1/documents/{doc_id}/content")
+    assert content.status_code == 500
+    rows = await denied_rows(session_factory, "document.download")
+    assert any(r.details.get("reason") == "integrity_mismatch" for r in rows)
+
+
+async def test_version_endpoints_require_auth(client, session_factory):
+    """AC-10 surface: no session means 401 before any document logic."""
+    doc_id = uuid.uuid4()
+    assert (await client.get(f"/v1/documents/{doc_id}/versions")).status_code == 401
+    assert (await client.get(f"/v1/documents/{doc_id}/versions/1/content")).status_code == 401
+    assert (await client.post(f"/v1/documents/{doc_id}/versions/1/restore")).status_code == 401
