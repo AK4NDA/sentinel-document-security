@@ -5,10 +5,10 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import AwareDatetime
-from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.auth import limiter
 from app.api.deps import extract_token, require_role
 from app.core.config import get_settings
 from app.core.database import get_db, get_session_factory
@@ -26,9 +26,6 @@ def _verify_key(request: Request) -> str:
     if token is not None:
         return f"session:{hashlib.sha256(token.encode()).hexdigest()}"
     return f"ip:{get_remote_address(request)}"
-
-
-audit_limiter = Limiter(key_func=_verify_key)
 
 
 def _audit_limit():
@@ -69,7 +66,7 @@ async def list_entries(
 
 
 @router.post("/verify", response_model=VerifyResult)
-@audit_limiter.limit(_audit_limit)
+@limiter.limit(_audit_limit, key_func=_verify_key)
 async def verify_chain(
     request: Request,
     db: AsyncSession = Depends(get_db),

@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
 )
@@ -42,6 +43,7 @@ class DocumentVersion(Base):
     mime_type: Mapped[str] = mapped_column(String(128))
     key_id: Mapped[str | None] = mapped_column(String(64))
     key_version: Mapped[str | None] = mapped_column(String(64))
+    search_text: Mapped[bytes | None] = mapped_column(LargeBinary)
     created_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True
     )
