@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import Document, DocumentVersion, User
-from app.schemas.documents import DocumentMeta
+from app.schemas.documents import DocumentMeta, VersionListResponse, VersionMeta
 from app.services import audit, blob_store
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -124,6 +124,7 @@ async def _deny(
     reason: str,
     doc: Document | None = None,
     status_code: int = status.HTTP_403_FORBIDDEN,
+    details: dict | None = None,
 ) -> None:
     await audit.record_denial(
         db,
@@ -132,6 +133,7 @@ async def _deny(
         reason=reason,
         target_type="document" if doc else None,
         target_id=str(doc.id) if doc else None,
+        details=details,
     )
     raise HTTPException(status_code, "forbidden" if status_code == 403 else "not found")
 
@@ -380,6 +382,245 @@ async def edit(
             details={
                 "filename": filename,
                 "size_bytes": len(content),
+                "version_number": new_version.version_number,
+            },
+            **snapshot,
+        )
+        return doc
+
+    try:
+        doc = await audit.transact(db, attempt)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "version conflict") from exc
+    except audit.AuditChainFork:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR) from None
+    await db.refresh(doc, attribute_names=["current_version"])
+    return doc
+
+
+async def _fetch_version(
+    session: AsyncSession, doc_id: uuid.UUID, version_number: int
+) -> DocumentVersion | None:
+    result = await session.execute(
+        select(DocumentVersion).where(
+            DocumentVersion.document_id == doc_id,
+            DocumentVersion.version_number == version_number,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_versions(db: AsyncSession, actor: User, doc_id: uuid.UUID) -> VersionListResponse:
+    """Versions at or below the caller's clearance, newest first (spec 0007)."""
+    doc = await _readable_document(db, actor, doc_id, "document.versions_list")
+    snapshot = audit.actor_kwargs(actor)
+    clearance = actor.clearance
+    current_id = doc.current_version_id
+
+    async def attempt(session: AsyncSession) -> VersionListResponse:
+        rows = (
+            (
+                await session.execute(
+                    select(DocumentVersion)
+                    .options(selectinload(DocumentVersion.created_by_user))
+                    .where(
+                        DocumentVersion.document_id == doc_id,
+                        DocumentVersion.classification <= clearance,
+                    )
+                    .order_by(DocumentVersion.version_number.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await audit.append(
+            session,
+            action="document.versions_list",
+            outcome="allowed",
+            target_type="document",
+            target_id=str(doc_id),
+            **snapshot,
+        )
+        return VersionListResponse(
+            versions=[
+                VersionMeta(
+                    version_number=v.version_number,
+                    classification=v.classification,
+                    size_bytes=v.size_bytes,
+                    mime_type=v.mime_type,
+                    created_by=v.created_by_user.username,
+                    created_at=v.created_at,
+                    is_current=v.id == current_id,
+                )
+                for v in rows
+            ]
+        )
+
+    try:
+        return await audit.transact(db, attempt)
+    except audit.AuditChainFork:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR) from None
+
+
+async def read_version_content(
+    db: AsyncSession, actor: User, doc_id: uuid.UUID, version_number: int
+) -> tuple[bytes, str, str]:
+    """Returns (plaintext, filename, mime_type) for one historical version."""
+    action = "document.version_download"
+    doc = await _readable_document(db, actor, doc_id, action)
+    version = await _fetch_version(db, doc_id, version_number)
+    if version is None:
+        await _deny(
+            db,
+            action,
+            actor,
+            "not_found",
+            doc=doc,
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"version_number": version_number},
+        )
+    if actor.clearance < version.classification:
+        await _deny(
+            db,
+            action,
+            actor,
+            "clearance",
+            doc=doc,
+            details={"version_number": version_number},
+        )
+    snapshot = audit.actor_kwargs(actor)
+
+    plaintext = await blob_store.load(version.blob_path)
+    if hashlib.sha256(plaintext).hexdigest() != version.content_sha256:
+        await audit.record_denial(
+            db,
+            action=action,
+            actor=actor,
+            reason="integrity_mismatch",
+            target_type="document",
+            target_id=str(doc.id),
+            details={"version_number": version_number},
+        )
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "integrity check failed")
+
+    async def attempt(session: AsyncSession):
+        await audit.append(
+            session,
+            action=action,
+            outcome="allowed",
+            target_type="document",
+            target_id=str(doc_id),
+            details={"version_number": version_number},
+            **snapshot,
+        )
+
+    filename = _download_filename(doc.title, version.mime_type)
+    mime = version.mime_type
+    try:
+        await audit.transact(db, attempt)
+    except audit.AuditChainFork:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR) from None
+    return plaintext, filename, mime
+
+
+async def restore(
+    db: AsyncSession, actor: User, doc_id: uuid.UUID, version_number: int
+) -> Document:
+    """Append a new version copying the source row's content (spec 0007)."""
+    action = "document.version_restore"
+    doc = await _fetch_document(db, doc_id)
+    if doc is None or doc.owner_id != actor.id:
+        await _deny(
+            db,
+            action,
+            actor,
+            "not_owner_or_missing",
+            doc=doc,
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"version_number": version_number},
+        )
+    version = doc.current_version
+    if version is None or actor.clearance < version.classification:
+        await _deny(
+            db,
+            action,
+            actor,
+            "clearance",
+            doc=doc,
+            details={"version_number": version_number},
+        )
+    source = await _fetch_version(db, doc_id, version_number)
+    if source is None:
+        await _deny(
+            db,
+            action,
+            actor,
+            "not_found",
+            doc=doc,
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"version_number": version_number},
+        )
+    if actor.clearance < source.classification:
+        await _deny(
+            db,
+            action,
+            actor,
+            "clearance",
+            doc=doc,
+            details={"version_number": version_number},
+        )
+    snapshot = audit.actor_kwargs(actor)
+    src = {
+        "id": source.id,
+        "version_number": source.version_number,
+        "content_sha256": source.content_sha256,
+        "blob_path": source.blob_path,
+        "size_bytes": source.size_bytes,
+        "mime_type": source.mime_type,
+        "key_id": source.key_id,
+        "key_version": source.key_version,
+    }
+    clearance = actor.clearance
+    owner_id = actor.id
+
+    async def attempt(session: AsyncSession) -> Document:
+        doc = await _fetch_document(session, doc_id)
+        if doc.current_version_id == src["id"]:
+            await session.rollback()
+            raise HTTPException(status.HTTP_409_CONFLICT, "version is already current")
+        max_version = (
+            await session.execute(
+                select(func.max(DocumentVersion.version_number)).where(
+                    DocumentVersion.document_id == doc_id
+                )
+            )
+        ).scalar_one()
+        new_version = DocumentVersion(
+            document_id=doc_id,
+            version_number=(max_version or 0) + 1,
+            classification=clearance,
+            content_sha256=src["content_sha256"],
+            blob_path=src["blob_path"],
+            size_bytes=src["size_bytes"],
+            mime_type=src["mime_type"],
+            key_id=src["key_id"],
+            key_version=src["key_version"],
+            created_by=owner_id,
+        )
+        session.add(new_version)
+        await session.flush()
+        doc.current_version_id = new_version.id
+        doc.updated_at = datetime.now(UTC)
+        await session.flush()
+        await audit.append(
+            session,
+            action=action,
+            outcome="allowed",
+            target_type="document",
+            target_id=str(doc_id),
+            details={
+                "source_version_number": src["version_number"],
                 "version_number": new_version.version_number,
             },
             **snapshot,
