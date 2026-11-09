@@ -1,9 +1,11 @@
 """API acceptance tests for per user document sharing (spec 0009)."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from test_api import (
     audit_rows,
     auth_client,
@@ -15,7 +17,7 @@ from test_api import (
 )
 
 from app.main import app
-from app.models import ClassificationLevel, DocumentShare, User, UserRole
+from app.models import ClassificationLevel, Document, DocumentShare, User, UserRole
 
 
 def new_client() -> AsyncClient:
@@ -541,4 +543,204 @@ async def test_grant_ignores_extra_fields(client, session_factory):
     )
     assert response.status_code == 201, response.text
     assert response.json()["access_level"] == "read"
+    await owner_client.aclose()
+
+
+# AC-8: non owners get the same non revealing 404 on grant and revoke
+
+
+async def test_non_owner_cannot_grant_or_revoke(client, session_factory):
+    _, grantee = await setup_shared_doc(session_factory, "owner14", "grantee14")
+    other = await make_user(session_factory, "other14", clearance=ClassificationLevel.TOP_SECRET)
+    owner_client = new_client()
+    await auth_client(owner_client, "owner14")
+    doc_id = (await upload_doc(owner_client)).json()["id"]
+    await grant_share(owner_client, doc_id, grantee.id)
+
+    other_client = new_client()
+    await auth_client(other_client, "other14")
+    grant = await other_client.post(
+        f"/v1/documents/{doc_id}/shares", json={"user_id": str(other.id)}
+    )
+    assert grant.status_code == 404
+    revoke = await other_client.delete(f"/v1/documents/{doc_id}/shares/{grantee.id}")
+    assert revoke.status_code == 404
+
+    # The owner gets the same 404 for a document that does not exist.
+    missing = await owner_client.post(
+        f"/v1/documents/{uuid.uuid4()}/shares", json={"user_id": str(grantee.id)}
+    )
+    assert missing.status_code == 404
+
+    for action in ("document.share_grant", "document.share_revoke"):
+        denied = await denied_rows(session_factory, action)
+        assert any(r.actor_username == "other14" for r in denied), action
+
+    await owner_client.aclose()
+    await other_client.aclose()
+
+
+# AC-6: /v1/shares/mine orders newest grant first and skips versionless documents
+
+
+async def test_shares_mine_orders_newest_first_and_skips_versionless(client, session_factory):
+    owner, grantee = await setup_shared_doc(session_factory, "owner15", "grantee15")
+    owner_client = new_client()
+    await auth_client(owner_client, "owner15")
+    doc_a = (await upload_doc(owner_client, title="First")).json()["id"]
+    doc_b = (await upload_doc(owner_client, title="Second")).json()["id"]
+    await grant_share(owner_client, doc_a, grantee.id)
+    await grant_share(owner_client, doc_b, grantee.id)
+
+    async with session_factory() as session:
+        shares = (
+            (
+                await session.execute(
+                    select(DocumentShare).where(DocumentShare.user_id == grantee.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        by_doc = {s.document_id: s for s in shares}
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        by_doc[uuid.UUID(doc_a)].created_at = base
+        by_doc[uuid.UUID(doc_b)].created_at = base + timedelta(minutes=1)
+
+        # A versionless document with the newest share must not appear.
+        versionless = Document(title="No versions", owner_id=owner.id)
+        session.add(versionless)
+        await session.flush()
+        session.add(
+            DocumentShare(
+                document_id=versionless.id,
+                user_id=grantee.id,
+                granted_by=owner.id,
+                access_level="read",
+                created_at=base + timedelta(minutes=2),
+            )
+        )
+        await session.commit()
+
+    grantee_client = new_client()
+    await auth_client(grantee_client, "grantee15")
+    mine = await grantee_client.get("/v1/shares/mine")
+    assert mine.status_code == 200, mine.text
+    docs = mine.json()["documents"]
+    assert [d["id"] for d in docs] == [doc_b, doc_a]
+    assert all(d["title"] != "No versions" for d in docs)
+
+    await owner_client.aclose()
+    await grantee_client.aclose()
+
+
+# AC-13: lookup honors the limit and treats wildcards literally
+
+
+async def test_user_lookup_limit_and_wildcard_literals(client, session_factory):
+    await make_user(session_factory, "wilduser1")
+    await make_user(session_factory, "wild_user2")
+    await make_user(session_factory, "wildXuser3")
+    await auth_client(client, "wilduser1")
+
+    limited = await client.get("/v1/users/lookup", params={"username": "wild", "limit": 1})
+    assert limited.status_code == 200, limited.text
+    assert len(limited.json()["users"]) == 1
+
+    over = await client.get("/v1/users/lookup", params={"username": "wild", "limit": 21})
+    assert over.status_code == 422
+
+    # Underscore and percent are literal characters, not ILIKE wildcards.
+    literal = await client.get("/v1/users/lookup", params={"username": "wild_"})
+    assert literal.status_code == 200
+    assert [u["username"] for u in literal.json()["users"]] == ["wild_user2"]
+
+    percent = await client.get("/v1/users/lookup", params={"username": "wild%"})
+    assert percent.status_code == 200
+    assert percent.json()["users"] == []
+
+
+# AC-2: via_share is flagged only when the share was actually needed
+
+
+async def test_cleared_grantee_read_has_no_via_share_flag(client, session_factory):
+    await make_user(session_factory, "owner16", clearance=ClassificationLevel.SECRET)
+    grantee = await make_user(
+        session_factory, "grantee16", clearance=ClassificationLevel.TOP_SECRET
+    )
+    owner_client = new_client()
+    await auth_client(owner_client, "owner16")
+    doc_id = (await upload_doc(owner_client)).json()["id"]
+    await grant_share(owner_client, doc_id, grantee.id)
+
+    grantee_client = new_client()
+    await auth_client(grantee_client, "grantee16")
+    meta = await grantee_client.get(f"/v1/documents/{doc_id}")
+    assert meta.status_code == 200
+
+    rows = await audit_rows(session_factory)
+    reads = [
+        r
+        for r in rows
+        if r.action == "document.read"
+        and r.outcome == "allowed"
+        and r.actor_username == "grantee16"
+    ]
+    assert reads
+    assert all("via_share" not in (r.details or {}) for r in reads)
+
+    await owner_client.aclose()
+    await grantee_client.aclose()
+
+
+# AC-4: a grant that loses the concurrent insert race returns the winner row
+
+
+async def test_lost_grant_race_returns_winner_row(client, session_factory, monkeypatch):
+    owner, grantee = await setup_shared_doc(session_factory, "owner17", "grantee17")
+    owner_client = new_client()
+    await auth_client(owner_client, "owner17")
+    doc_id = (await upload_doc(owner_client)).json()["id"]
+
+    # The winning grant commits first.
+    async with session_factory() as session:
+        winner = DocumentShare(
+            document_id=uuid.UUID(doc_id),
+            user_id=grantee.id,
+            granted_by=owner.id,
+            access_level="read",
+        )
+        session.add(winner)
+        await session.commit()
+        winner_id = winner.id
+
+    # Simulate losing the insert race: the pair constraint fires with a
+    # SQLite style message that names no constraint.
+    async def losing_transact(db, op):
+        raise IntegrityError(
+            "INSERT INTO document_shares ...",
+            {},
+            Exception(
+                "UNIQUE constraint failed: document_shares.document_id, document_shares.user_id"
+            ),
+        )
+
+    monkeypatch.setattr("app.services.audit.transact", losing_transact)
+
+    response = await grant_share(owner_client, doc_id, grantee.id)
+    assert response.status_code == 200, response.text
+    assert response.json()["id"] == str(winner_id)
+
+    async with session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(DocumentShare).where(DocumentShare.document_id == uuid.UUID(doc_id))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(rows) == 1
+
     await owner_client.aclose()

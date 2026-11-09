@@ -1,7 +1,7 @@
 # 0009. Per user document sharing
 
 **Date**: 2026-11-09
-**Status**: In Progress
+**Status**: Accepted
 
 
 ## Summary

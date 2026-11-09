@@ -20,7 +20,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 7   | Auditor access & log verification  | Slice 4    | done        |
 | 8   | Document version history           | Slice 5    | done        |
 | 9   | Full text search                   | Slice 6    | done        |
-| 10  | Per user sharing                   | Slice 7    | in-progress |
+| 10  | Per user sharing                   | Slice 7    | done        |
 | 11  | Access alerts                      | Slice 8    | planned     |
 | 12  | Runnable demo packaging · Alpha    | Slice 9    | planned     |
 | 13  | Maintenance & retention            | Hardening  | planned     |
@@ -182,7 +182,7 @@ Let users find documents by content, with results filtered by the caller's clear
 
 ## Slice 7: Per user sharing
 
-### 10. Per user sharing · in progress
+### 10. Per user sharing · done
 
 Layer named user grants on top of the policy model so a document can be shared with specific people beyond the default clearance rules, with grant and revoke audited and the interaction with classification levels defined.
 **Done when:** a user can share a document with a named colleague who could not otherwise read it, the grant appears in the audit log, revoking it blocks further access, and grants never override a lower classification ceiling.
@@ -194,9 +194,9 @@ Layer named user grants on top of the policy model so a document can be shared w
   - [x] Discovery surfaces: `GET /v1/shares/mine` and `GET /v1/users/lookup` with rate limit setting (AC-6, AC-13)
   - [x] Test suite: all AC scenarios including admin interaction, search non leak, concurrency, and audit assertions (AC-1 to AC-15)
 - [x] Verify it: `/check verify per user sharing`
-- [ ] Test it: `/test per user sharing`
-- [ ] Review it (fresh model): `/check review per user sharing`
-- [ ] Document it: `/document per user sharing`
+- [x] Test it: `/test per user sharing`
+- [x] Review it (fresh model): `/check review per user sharing`
+- [x] Document it: `/document per user sharing`
       Spec [0009](../specs/0009-per-user-document-sharing/index.md) · code in `app/services/shares.py`, `app/api/shares.py`, `app/api/documents.py`, `app/api/users.py`
 
 ## Slice 8: Access alerts

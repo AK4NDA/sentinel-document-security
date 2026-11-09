@@ -200,14 +200,14 @@ async def grant(
 
     try:
         share, created = await audit.transact(db, attempt)
-    except IntegrityError as exc:
+    except IntegrityError:
         await db.rollback()
-        if "uq_document_shares_document_user" not in str(getattr(exc, "orig", exc)):
-            raise
-        # Lost the insert race: the winner's row is the answer, already active.
+        # Lost the insert race: the winner's committed row is the answer.
+        # Dialect neutral: any integrity failure is confirmed by the re-read,
+        # so a violation that is not the pair conflict still surfaces.
         winner = await _active_share(db, doc_id, user_id)
         if winner is None:
-            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR) from None
+            raise
         return await _load_share(db, winner.id), False
     except audit.AuditChainFork:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR) from None
