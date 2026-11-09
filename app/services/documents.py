@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Document, DocumentVersion, User
+from app.models import Document, DocumentShare, DocumentVersion, User
 from app.schemas.documents import DocumentMeta, VersionListResponse, VersionMeta
 from app.security.encryption import KEY_ID, KEY_VERSION
 from app.services import audit, blob_store, text_extract
@@ -139,17 +139,56 @@ async def _deny(
     raise HTTPException(status_code, "forbidden" if status_code == 403 else "not found")
 
 
+async def _active_share_id(
+    session: AsyncSession, doc_id: uuid.UUID, user_id: uuid.UUID
+) -> uuid.UUID | None:
+    """Id of the caller's active share on the document, if any (spec 0009)."""
+    return (
+        await session.execute(
+            select(DocumentShare.id).where(
+                DocumentShare.document_id == doc_id,
+                DocumentShare.user_id == user_id,
+                DocumentShare.revoked_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def _readable_document(
     db: AsyncSession, actor: User, doc_id: uuid.UUID, action: str
-) -> Document:
-    """Fetch + BLP read check; audits 404/403 denials. Caller must be officer."""
+) -> tuple[Document, uuid.UUID | None]:
+    """Fetch + read check; audits 404/403 denials. Caller must be officer.
+
+    Returns the document plus the caller's active share id when one exists.
+    An active share admits the read even when clearance fails (spec 0009).
+    """
     doc = await _fetch_document(db, doc_id)
     if doc is None:
         await _deny(db, action, actor, "not_found", status_code=status.HTTP_404_NOT_FOUND)
     version = doc.current_version
-    if version is None or actor.clearance < version.classification:
+    if version is None:
         await _deny(db, action, actor, "clearance", doc=doc)
-    return doc
+    share_id = await _active_share_id(db, doc_id, actor.id)
+    if actor.clearance < version.classification and share_id is None:
+        await _deny(db, action, actor, "clearance", doc=doc)
+    return doc, share_id
+
+
+async def _share_audit_details(
+    session: AsyncSession,
+    doc_id: uuid.UUID,
+    actor: User,
+    *classifications: int,
+) -> dict | None:
+    """via_share/share_id audit details, recomputed in the append transaction.
+
+    Set only when an active share exists and the caller's clearance alone
+    would have denied one of the touched classifications (spec 0009 AC-2).
+    """
+    share_id = await _active_share_id(session, doc_id, actor.id)
+    if share_id is not None and any(actor.clearance < c for c in classifications):
+        return {"via_share": True, "share_id": str(share_id)}
+    return None
 
 
 async def upload(
@@ -246,17 +285,22 @@ async def list_own(db: AsyncSession, actor: User) -> list[Document]:
 
 
 async def read_meta(db: AsyncSession, actor: User, doc_id: uuid.UUID) -> DocumentMeta:
-    doc = await _readable_document(db, actor, doc_id, "document.read")
+    doc, _ = await _readable_document(db, actor, doc_id, "document.read")
+    version = doc.current_version
+    assert version is not None
+    doc_classification = int(version.classification)
     snapshot = audit.actor_kwargs(actor)
 
     async def attempt(session: AsyncSession) -> Document:
         fresh = await _fetch_document(session, doc_id)
+        share_details = await _share_audit_details(session, doc_id, actor, doc_classification)
         await audit.append(
             session,
             action="document.read",
             outcome="allowed",
             target_type="document",
             target_id=str(doc_id),
+            details=share_details,
             **snapshot,
         )
         return fresh
@@ -277,8 +321,10 @@ def _download_filename(title: str, mime_type: str) -> str:
 
 async def read_content(db: AsyncSession, actor: User, doc_id: uuid.UUID) -> tuple[bytes, str, str]:
     """Returns (plaintext, filename, mime_type)."""
-    doc = await _readable_document(db, actor, doc_id, "document.download")
+    doc, _ = await _readable_document(db, actor, doc_id, "document.download")
     version = doc.current_version
+    assert version is not None
+    doc_classification = int(version.classification)
     snapshot = audit.actor_kwargs(actor)
 
     plaintext = await blob_store.load(version.blob_path)
@@ -294,12 +340,14 @@ async def read_content(db: AsyncSession, actor: User, doc_id: uuid.UUID) -> tupl
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "integrity check failed")
 
     async def attempt(session: AsyncSession):
+        share_details = await _share_audit_details(session, doc_id, actor, doc_classification)
         await audit.append(
             session,
             action="document.download",
             outcome="allowed",
             target_type="document",
             target_id=str(doc_id),
+            details=share_details,
             **snapshot,
         )
 
@@ -417,34 +465,41 @@ async def _fetch_version(
 
 
 async def list_versions(db: AsyncSession, actor: User, doc_id: uuid.UUID) -> VersionListResponse:
-    """Versions at or below the caller's clearance, newest first (spec 0007)."""
-    doc = await _readable_document(db, actor, doc_id, "document.versions_list")
+    """Versions at or below the caller's clearance, newest first (spec 0007).
+
+    An active share lifts the per version clearance filter: the grantee sees
+    every version of the shared document (spec 0009 AC-7).
+    """
+    doc, share_id = await _readable_document(db, actor, doc_id, "document.versions_list")
+    current = doc.current_version
+    assert current is not None
+    doc_classification = int(current.classification)
+    has_share = share_id is not None
     snapshot = audit.actor_kwargs(actor)
     clearance = actor.clearance
     current_id = doc.current_version_id
 
     async def attempt(session: AsyncSession) -> VersionListResponse:
+        stmt = (
+            select(DocumentVersion)
+            .options(selectinload(DocumentVersion.created_by_user))
+            .where(DocumentVersion.document_id == doc_id)
+        )
+        if not has_share:
+            stmt = stmt.where(DocumentVersion.classification <= clearance)
         rows = (
-            (
-                await session.execute(
-                    select(DocumentVersion)
-                    .options(selectinload(DocumentVersion.created_by_user))
-                    .where(
-                        DocumentVersion.document_id == doc_id,
-                        DocumentVersion.classification <= clearance,
-                    )
-                    .order_by(DocumentVersion.version_number.desc())
-                )
-            )
+            (await session.execute(stmt.order_by(DocumentVersion.version_number.desc())))
             .scalars()
             .all()
         )
+        share_details = await _share_audit_details(session, doc_id, actor, doc_classification)
         await audit.append(
             session,
             action="document.versions_list",
             outcome="allowed",
             target_type="document",
             target_id=str(doc_id),
+            details=share_details,
             **snapshot,
         )
         return VersionListResponse(
@@ -473,7 +528,10 @@ async def read_version_content(
 ) -> tuple[bytes, str, str]:
     """Returns (plaintext, filename, mime_type) for one historical version."""
     action = "document.version_download"
-    doc = await _readable_document(db, actor, doc_id, action)
+    doc, share_id = await _readable_document(db, actor, doc_id, action)
+    current = doc.current_version
+    assert current is not None
+    doc_classification = int(current.classification)
     version = await _fetch_version(db, doc_id, version_number)
     if version is None:
         await _deny(
@@ -485,7 +543,8 @@ async def read_version_content(
             status_code=status.HTTP_404_NOT_FOUND,
             details={"version_number": version_number},
         )
-    if actor.clearance < version.classification:
+    version_classification = int(version.classification)
+    if actor.clearance < version_classification and share_id is None:
         await _deny(
             db,
             action,
@@ -510,13 +569,17 @@ async def read_version_content(
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "integrity check failed")
 
     async def attempt(session: AsyncSession):
+        share_details = await _share_audit_details(
+            session, doc_id, actor, doc_classification, version_classification
+        )
+        details = {"version_number": version_number, **(share_details or {})}
         await audit.append(
             session,
             action=action,
             outcome="allowed",
             target_type="document",
             target_id=str(doc_id),
-            details={"version_number": version_number},
+            details=details,
             **snapshot,
         )
 

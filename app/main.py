@@ -9,6 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from app.api import audit as audit_router
 from app.api import auth as auth_router
 from app.api import documents as documents_router
+from app.api import shares as shares_router
 from app.api import users as users_router
 from app.api.auth import limiter
 from app.api.health import router as health_router
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(users_router.router)
     app.include_router(documents_router.router)
+    app.include_router(shares_router.router)
     app.include_router(audit_router.router)
     return app
 

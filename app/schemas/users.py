@@ -1,3 +1,4 @@
+import uuid
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -58,3 +59,12 @@ class UserAdminPatch(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=12, max_length=256)
+
+
+class UserLookupOut(BaseModel):
+    id: uuid.UUID
+    username: str
+
+
+class UserLookupResponse(BaseModel):
+    users: list[UserLookupOut]

@@ -1,7 +1,7 @@
 # 0004. Add TOTP multi factor authentication and login lockout
 
 **Date**: 2026-11-07
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

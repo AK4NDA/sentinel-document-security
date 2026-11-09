@@ -6,7 +6,7 @@ Backend for a classified document access control system: Bell LaPadula rules plu
 
 - **Language / Runtime**: Python 3.12, async end to end
 - **Framework**: FastAPI + Pydantic v2, REST under `/v1`
-- **Key dependencies**: SQLAlchemy 2.x async, Alembic, argon2-cffi, pyotp (TOTP), `cryptography` (AES-GCM), structlog, slowapi, pydantic-settings
+- **Key dependencies**: SQLAlchemy 2.x async, Alembic, argon2-cffi, pyotp (TOTP), `cryptography` (AES-GCM), structlog, slowapi, pydantic-settings, pypdf/python-docx/openpyxl/python-pptx (search text extraction)
 - **Databases**: PostgreSQL 16 in compose, SQLite via aiosqlite for dev and tests
 - **Package manager**: `uv` (committed `uv.lock`)
 
@@ -36,6 +36,9 @@ uv run pytest
 # Lint and format
 uv run ruff check .
 uv run ruff format .
+
+# Git hooks (ruff check + format)
+uv run pre-commit install
 
 # Bootstrap the first admin (only way to create admins)
 uv run python -m app create-admin --username ... --email ...
@@ -81,10 +84,20 @@ Project skills live in `.agents/skills/` (lockfile: `skills-lock.json`).
 - [totp](.agents/skills/totp/): `bytesagain/ai-skills`, TOTP RFC 6238, pyotp, otpauth URIs, replay protection
 - [uv](.agents/skills/uv/): `mitsuhiko/agent-stuff`, uv package manager and script workflows
 - [pytest-fastapi-pattern](.agents/skills/pytest-fastapi-pattern/): `saintgo7/claude-skills`, FastAPI pytest integration patterns
+- [pdf](.agents/skills/pdf/): `anthropics/skills`, PDF read, extract, merge, split, forms
+- [docx](.agents/skills/docx/): `anthropics/skills`, Word document create, read, edit
+- [xlsx](.agents/skills/xlsx/): `anthropics/skills`, spreadsheet read, write, analysis
+- [pptx](.agents/skills/pptx/): `anthropics/skills`, PowerPoint create, read, edit
+- [documents](.agents/skills/documents/): `magnus919/agent-skills`, office document generate, inspect, validate, fix
+- [document-generator](.agents/skills/document-generator/): `lirrensi/skills-hoard`, create, read, edit, convert office docs and PDFs
+- [py-git-hooks](.agents/skills/py-git-hooks/): `l-mb/python-refactoring-skills`, Python pre-commit hooks with ruff and type checkers
+- [git-hooks-setup](.agents/skills/git-hooks-setup/): `wu529778790/shenzjd-skills`, git hooks setup including secret scanning
+- [git-hooks](.agents/skills/git-hooks/): `narenaryan/agent-skills`, git hook mechanics reference
+- [setup-pre-commit](.agents/skills/setup-pre-commit/): `andrewsrigom/agent-skills`, pre-commit automation (JavaScript centric)
 - Workflow skills: `scope`, `architect`, `develop`, `check`, `test`, `debug`, `document`, `sync`, `audit` (`JavaScript-Mastery-Pro/skills` in `.agents/skills/`)
 
 Declined: rate-limiting (yonatangross/orchestkit, no matching skill exists in that repo).
-MCP servers: postgres-mcp (recommended, connect via `claude mcp add` or your MCP settings with `uvx postgres-mcp --access-mode=restricted`).
+MCP servers: postgres-mcp (recommended, connect via `claude mcp add` or your MCP settings with `uvx postgres-mcp --access-mode=restricted`); mcp-docgen, doc-toolkit-mcp, mcp-documents-reader (recommended, office document reading).
 
 ## Context files
 

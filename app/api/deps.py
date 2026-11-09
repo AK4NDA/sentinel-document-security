@@ -58,8 +58,13 @@ GATE_ACTIONS: dict[tuple[str, str], str] = {
         "document.version_restore"
     ),
     ("DELETE", "/v1/documents/{doc_id}"): "document.delete",
+    ("GET", "/v1/documents/{doc_id}/shares"): "document.shares_list",
+    ("POST", "/v1/documents/{doc_id}/shares"): "document.share_grant",
+    ("DELETE", "/v1/documents/{doc_id}/shares/{user_id}"): "document.share_revoke",
+    ("GET", "/v1/shares/mine"): "document.list_shared",
     ("POST", "/v1/users"): "user.create",
     ("GET", "/v1/users"): "user.list",
+    ("GET", "/v1/users/lookup"): "user.lookup",
     ("PATCH", "/v1/users/{user_id}"): "user.privilege_update",
     ("POST", "/v1/users/{user_id}/disable"): "user.disabled",
     ("POST", "/v1/users/{user_id}/enable"): "user.enabled",

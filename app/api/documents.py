@@ -28,8 +28,10 @@ from app.schemas.documents import (
     SearchResponse,
     VersionListResponse,
 )
+from app.schemas.shares import ShareCreateRequest, ShareListResponse, ShareOut
 from app.services import documents as documents_service
 from app.services import search as search_service
+from app.services import shares as shares_service
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
@@ -176,6 +178,40 @@ async def restore_version(
 ):
     doc = await documents_service.restore(db, actor, doc_id, version_number)
     return documents_service.to_meta(doc)
+
+
+@router.get("/{doc_id}/shares", response_model=ShareListResponse)
+async def list_document_shares(
+    doc_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_role("document.shares_list", OFFICER)),
+):
+    rows = await shares_service.list_shares(db, actor, doc_id, path=request.url.path)
+    return ShareListResponse(shares=[shares_service.to_share_out(s) for s in rows])
+
+
+@router.post("/{doc_id}/shares", response_model=ShareOut)
+async def grant_document_share(
+    doc_id: uuid.UUID,
+    body: ShareCreateRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_role("document.share_grant", OFFICER)),
+):
+    share, created = await shares_service.grant(db, actor, doc_id, body.user_id)
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return shares_service.to_share_out(share)
+
+
+@router.delete("/{doc_id}/shares/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_document_share(
+    doc_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_role("document.share_revoke", OFFICER)),
+):
+    await shares_service.revoke(db, actor, doc_id, user_id)
 
 
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)

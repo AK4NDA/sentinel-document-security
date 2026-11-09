@@ -2,11 +2,13 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import limiter
 from app.api.deps import require_role
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models import User, UserRole
 from app.schemas.users import (
@@ -14,12 +16,33 @@ from app.schemas.users import (
     UserAdminCreate,
     UserAdminPatch,
     UserListResponse,
+    UserLookupResponse,
     UserProfile,
 )
 from app.services import mfa as mfa_service
 from app.services import users as users_service
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
+
+
+def _lookup_limit():
+    settings = get_settings()
+    return settings.rate_limit_user_lookup if settings.rate_limit_enabled else "1000000/minute"
+
+
+@router.get("/lookup", response_model=UserLookupResponse)
+@limiter.limit(_lookup_limit)
+async def lookup_users(
+    request: Request,
+    username: str = Query(min_length=2, max_length=64),
+    limit: int = Query(default=20, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_role("user.lookup", UserRole.USER)),
+):
+    rows = await users_service.lookup_users(
+        db, actor, prefix=username, limit=limit, path=request.url.path
+    )
+    return UserLookupResponse(users=rows)
 
 
 @router.post("", response_model=UserProfile, status_code=status.HTTP_201_CREATED)
