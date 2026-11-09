@@ -156,9 +156,9 @@ Keep every prior version of a document on edit, each with its own classification
   - [x] Restore endpoint appending a new version (AC-6 to AC-8, AC-9)
   - [x] Route registration, `GATE_ACTIONS`, full test suite (AC-1 to AC-10)
 - [x] Verify it: `/check verify document version history`
-- [ ] Test it: `/test document version history`
-- [ ] Review it (fresh model): `/check review document version history`
-- [ ] Document it: `/document document version history`
+- [x] Test it: `/test document version history`
+- [x] Review it (fresh model): `/check review document version history`
+- [x] Document it: `/document document version history`
       Spec [0007](../specs/0007-document-version-history/index.md) · code in `app/api/documents.py`, `app/services/documents.py`
 
 ## Slice 6: Full text search
