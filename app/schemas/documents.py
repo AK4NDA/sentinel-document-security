@@ -20,6 +20,13 @@ class DocumentListResponse(BaseModel):
     documents: list[DocumentMeta]
 
 
+class SearchResponse(BaseModel):
+    documents: list[DocumentMeta]
+    total: int
+    limit: int
+    offset: int
+
+
 class VersionMeta(BaseModel):
     version_number: int
     classification: ClassificationLevel

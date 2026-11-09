@@ -18,6 +18,8 @@ services:
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_DEFAULT: ${RATE_LIMIT_DEFAULT:-100/minute}
       RATE_LIMIT_AUTH: ${RATE_LIMIT_AUTH:-10/minute}
+      RATE_LIMIT_AUDIT: ${RATE_LIMIT_AUDIT:-30/minute}
+      RATE_LIMIT_SEARCH: ${RATE_LIMIT_SEARCH:-30/minute}
     ports:
       - "${API_PORT:-8000}:${API_PORT:-8000}"
     volumes:

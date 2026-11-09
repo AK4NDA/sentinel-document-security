@@ -11,15 +11,15 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 
 | #   | Feature                            | Phase      | Status      |
 | --- | ---------------------------------- | ---------- | ----------- |
-| 1   | Stack & architecture               | Foundation | in-progress |
-| 2   | Coding standards & tooling         | Foundation | planned     |
+| 1   | Stack & architecture               | Foundation | done        |
+| 2   | Coding standards & tooling         | Foundation | done        |
 | 3   | Data model                         | Foundation | done        |
 | 4   | Core classified document loop      | Slice 1    | done        |
 | 5   | MFA & login protection             | Slice 2    | done        |
 | 6   | Administration & account lifecycle | Slice 3    | done        |
 | 7   | Auditor access & log verification  | Slice 4    | done        |
-| 8   | Document version history           | Slice 5    | in-progress |
-| 9   | Full text search                   | Slice 6    | planned     |
+| 8   | Document version history           | Slice 5    | done        |
+| 9   | Full text search                   | Slice 6    | done        |
 | 10  | Per user sharing                   | Slice 7    | planned     |
 | 11  | Access alerts                      | Slice 8    | planned     |
 | 12  | Runnable demo packaging · Alpha    | Slice 9    | planned     |
@@ -28,20 +28,20 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 
 ## Foundations
 
-### 1. Stack & architecture · in-progress
+### 1. Stack & architecture · done
 
 Ratify the stated stack (Python, FastAPI, Pydantic, PostgreSQL with SQLite for development, SQLAlchemy and Alembic, React TypeScript Vite Tailwind held for the later UI scope) and decide the internal boundaries: where the policy engine lives, how encryption keys are managed, how the audit log is chained. Scaffold only the backend skeleton this pass needs.
 **Done when:** the stack and architecture are recorded in a spec, and the backend scaffold boots locally with a database connection and a clean migration.
 
 - [x] Decide the stack (spec): `/architect stack & architecture`
 - [x] Scaffold from the decision: `/develop stack & architecture`
-- [ ] Verify it: `/check verify stack & architecture`
-- [ ] Test it: `/test stack & architecture`
-- [ ] Review it (fresh model): `/check review stack & architecture`
+- [x] Verify it: `/check verify stack & architecture`
+- [x] Test it: `/test stack & architecture`
+- [x] Review it (fresh model): `/check review stack & architecture`
 - [x] Document it: `/document stack & architecture`
       Spec [0001](../specs/0001-stack-architecture/index.md)
 
-### 2. Coding standards & tooling
+### 2. Coding standards & tooling · done
 
 Capture conventions from the real scaffolded project, then install lint, format, type strictness, and pre commit enforcement so every later slice follows the same rules.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit hooks run clean on the scaffold.
@@ -144,7 +144,7 @@ Give the auditor role its own surface: read access to the audit log, an endpoint
 
 ## Slice 5: Document version history
 
-### 8. Document version history · in-progress
+### 8. Document version history · done
 
 Keep every prior version of a document on edit, each with its own classification and authorship, support reading and restoring an older version, and audit every version event. Decide how classification changes across versions interact with the write down rule.
 **Done when:** editing a document preserves the old version, each version carries its own classification, a user can restore an earlier version, and the chain of custody stays intact in the log.
@@ -163,12 +163,22 @@ Keep every prior version of a document on edit, each with its own classification
 
 ## Slice 6: Full text search
 
-### 9. Full text search · needs a decision
+### 9. Full text search · done
 
 Let users find documents by content, with results filtered by the caller's clearance so a search never reveals the existence of a document above it. Decide the indexing approach and how encrypted content is indexed without weakening encryption.
 **Done when:** a user can search and only sees documents their clearance and role permit, and searching for a term that only exists in a higher classified document returns nothing.
 
-- [ ] Design it (spec): `/architect full text search`
+- [x] Design it (spec): `/architect full text search`
+- [x] Build it: `/develop full text search`
+  - [x] Extraction pipeline: deps, `text_extract` module, `search_text` migration, wire into upload/edit/restore (AC-5, AC-6, AC-9, AC-10)
+  - [x] Rate limit setting: `RATE_LIMIT_SEARCH` through config, env, compose (AC-13)
+  - [x] Search endpoint: service, route, schema, audit action, role and clearance gates (AC-1 to AC-4, AC-7, AC-8, AC-11, AC-12)
+  - [x] Test suite: match semantics, clearance non leak, version and type edges, pagination, rate limit (all ACs)
+- [x] Verify it: `/check verify full text search`
+- [x] Test it: `/test full text search`
+- [x] Review it (fresh model): `/check review full text search`
+- [x] Document it: `/document full text search`
+      Spec [0008](../specs/0008-full-text-search/index.md)
 
 ## Slice 7: Per user sharing
 

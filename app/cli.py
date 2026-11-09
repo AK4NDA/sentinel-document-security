@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.database import SessionLocal
 from app.models import ClassificationLevel, User, UserRole
-from app.security.passwords import hash_password
+from app.security.passwords import hash_password_async
 from app.services import audit
 
 
@@ -33,7 +33,7 @@ async def _create_admin(args: argparse.Namespace) -> int:
         user = User(
             username=args.username,
             email=args.email,
-            password_hash=hash_password(password),
+            password_hash=await hash_password_async(password),
             role=UserRole.ADMIN,
             clearance=ClassificationLevel(args.clearance),
             display_name=args.display_name,

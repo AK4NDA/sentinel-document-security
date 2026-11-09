@@ -35,12 +35,19 @@ async def _deny_already_enrolled(db: AsyncSession, user: User) -> None:
 
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
-limiter = Limiter(key_func=get_remote_address)
 
 
 def _auth_limit():
     settings = get_settings()
     return settings.rate_limit_auth if settings.rate_limit_enabled else "1000000/minute"
+
+
+def _default_limit():
+    settings = get_settings()
+    return settings.rate_limit_default if settings.rate_limit_enabled else "1000000/minute"
+
+
+limiter = Limiter(key_func=get_remote_address, default_limits=[_default_limit])
 
 
 def _set_session_cookie(response: Response, token: str) -> None:

@@ -416,3 +416,4 @@ def test_mfa_settings_defaults():
     assert settings.totp_skew_steps == 1
     assert settings.login_max_attempts == 5
     assert settings.login_lockout_seconds == 900
+    assert settings.rate_limit_search == "30/minute"

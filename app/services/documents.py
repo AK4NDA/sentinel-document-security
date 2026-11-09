@@ -13,7 +13,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models import Document, DocumentVersion, User
 from app.schemas.documents import DocumentMeta, VersionListResponse, VersionMeta
-from app.services import audit, blob_store
+from app.security.encryption import KEY_ID, KEY_VERSION
+from app.services import audit, blob_store, text_extract
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
@@ -167,6 +168,7 @@ async def upload(
         raise
     filename = file.filename or "upload"
     blob_path, digest = await blob_store.store(content)
+    search_text = await text_extract.extract_search_text(mime, content)
     snapshot = audit.actor_kwargs(actor)
     owner_id = actor.id
     clearance = actor.clearance
@@ -183,8 +185,9 @@ async def upload(
             blob_path=blob_path,
             size_bytes=len(content),
             mime_type=mime,
-            key_id="master",
-            key_version="1",
+            key_id=KEY_ID,
+            key_version=KEY_VERSION,
+            search_text=search_text,
             created_by=owner_id,
         )
         session.add(version)
@@ -339,6 +342,7 @@ async def edit(
         raise
     filename = file.filename or "upload"
     blob_path, digest = await blob_store.store(content)
+    search_text = await text_extract.extract_search_text(mime, content)
     snapshot = audit.actor_kwargs(actor)
     owner_id = actor.id
     clearance = actor.clearance
@@ -360,8 +364,9 @@ async def edit(
             blob_path=blob_path,
             size_bytes=len(content),
             mime_type=mime,
-            key_id="master",
-            key_version="1",
+            key_id=KEY_ID,
+            key_version=KEY_VERSION,
+            search_text=search_text,
             created_by=owner_id,
         )
         session.add(new_version)
@@ -581,6 +586,13 @@ async def restore(
         "key_id": source.key_id,
         "key_version": source.key_version,
     }
+    search_text = source.search_text
+    if search_text is None:
+        try:
+            plaintext = await blob_store.load(src["blob_path"])
+            search_text = await text_extract.extract_search_text(src["mime_type"], plaintext)
+        except Exception:
+            search_text = None
     clearance = actor.clearance
     owner_id = actor.id
 
@@ -606,6 +618,7 @@ async def restore(
             mime_type=src["mime_type"],
             key_id=src["key_id"],
             key_version=src["key_version"],
+            search_text=search_text,
             created_by=owner_id,
         )
         session.add(new_version)

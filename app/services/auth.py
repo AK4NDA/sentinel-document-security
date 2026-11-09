@@ -74,7 +74,7 @@ async def login(
         if not user.is_active:
             await _deny_login(session, user=user, username=username, reason="disabled")
             return "unauthorized", None
-        if not passwords.verify_password(user.password_hash, password):
+        if not await passwords.verify_password_async(user.password_hash, password):
             await _deny_login(session, user=user, username=username, reason="bad_password")
             return "unauthorized", None
 

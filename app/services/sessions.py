@@ -73,7 +73,9 @@ async def validate(db: AsyncSession, token: str) -> tuple[UserSession, User] | N
     if now - last_seen >= LAST_SEEN_MIN_INTERVAL:
         session_row.last_seen_at = now
         session_row.expires_at = _expiry(_aware(session_row.created_at), now)
-        await db.flush()
+        # Commit so the slide persists even on routes that never write; the
+        # throttle keeps this to at most one write per minute per session.
+        await db.commit()
     return session_row, user
 
 

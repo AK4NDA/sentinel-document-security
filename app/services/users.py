@@ -175,13 +175,13 @@ async def reset_password(
 ) -> None:
     action = "user.password_reset"
     snapshot = audit.actor_kwargs(actor)
-    password_hash = passwords.hash_password(new_password)
 
     async def attempt(session: AsyncSession) -> str:
         target = await session.get(User, user_id)
         if target is None:
             await _append_denial(session, action, snapshot, user_id, "not_found")
             return "not_found"
+        password_hash = await passwords.hash_password_async(new_password)
         lockout_cleared = target.failed_login_attempts > 0 or target.locked_until is not None
         target.password_hash = password_hash
         target.failed_login_attempts = 0
@@ -214,7 +214,7 @@ async def create_user(db: AsyncSession, payload: UserCreate, actor: User) -> Use
             username=payload.username,
             email=payload.email,
             display_name=payload.display_name,
-            password_hash=passwords.hash_password(payload.password),
+            password_hash=await passwords.hash_password_async(payload.password),
             role=payload.role,
             clearance=payload.clearance,
             is_active=True,

@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import os
 from pathlib import Path
 
 from app.core.config import get_settings
@@ -12,14 +13,24 @@ def blob_path_for(plaintext_sha256: str) -> Path:
     return get_settings().upload_dir / plaintext_sha256[:2] / f"{plaintext_sha256}.enc"
 
 
+def _digest(plaintext: bytes) -> str:
+    return hashlib.sha256(plaintext).hexdigest()
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
 async def store(plaintext: bytes) -> tuple[str, str]:
     """Encrypt and persist; returns (relative blob_path, plaintext sha256)."""
-    digest = hashlib.sha256(plaintext).hexdigest()
+    digest = await asyncio.to_thread(_digest, plaintext)
     path = blob_path_for(digest)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         ciphertext = await asyncio.to_thread(encryption.seal, plaintext)
-        await asyncio.to_thread(path.write_bytes, ciphertext)
+        await asyncio.to_thread(_write_atomic, path, ciphertext)
     relative = path.relative_to(get_settings().upload_dir).as_posix()
     return relative, digest
 

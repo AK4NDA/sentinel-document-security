@@ -46,6 +46,7 @@ ENROLLMENT_EXEMPT_PATHS = frozenset(
 GATE_ACTIONS: dict[tuple[str, str], str] = {
     ("POST", "/v1/documents"): "document.upload",
     ("GET", "/v1/documents"): "document.list",
+    ("GET", "/v1/documents/search"): "document.search",
     ("GET", "/v1/documents/{doc_id}"): "document.read",
     ("GET", "/v1/documents/{doc_id}/content"): "document.download",
     ("POST", "/v1/documents/{doc_id}/versions"): "document.edit",

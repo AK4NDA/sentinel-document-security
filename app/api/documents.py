@@ -7,26 +7,38 @@ from fastapi import (
     Depends,
     File,
     Form,
+    HTTPException,
     Path,
+    Query,
+    Request,
     Response,
     UploadFile,
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import limiter
 from app.api.deps import require_role
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models import User, UserRole
 from app.schemas.documents import (
     DocumentListResponse,
     DocumentMeta,
+    SearchResponse,
     VersionListResponse,
 )
 from app.services import documents as documents_service
+from app.services import search as search_service
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
 OFFICER = UserRole.USER
+
+
+def _search_limit():
+    settings = get_settings()
+    return settings.rate_limit_search if settings.rate_limit_enabled else "1000000/minute"
 
 
 @router.post("", response_model=DocumentMeta, status_code=status.HTTP_201_CREATED)
@@ -54,6 +66,22 @@ async def list_documents(
 ):
     docs = await documents_service.list_own(db, actor)
     return DocumentListResponse(documents=[documents_service.to_meta(d) for d in docs])
+
+
+@router.get("/search", response_model=SearchResponse)
+@limiter.limit(_search_limit)
+async def search_documents(
+    request: Request,
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_role("document.search", OFFICER)),
+):
+    if not search_service.tokenize(q):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "query has no terms")
+    metas, total = await search_service.search(db, actor, q=q, limit=limit, offset=offset)
+    return SearchResponse(documents=metas, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{doc_id}", response_model=DocumentMeta)
