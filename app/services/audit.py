@@ -3,6 +3,7 @@
 import hashlib
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -231,9 +232,12 @@ async def append_with_retry(
     raise AuditChainFork() from last_exc
 
 
-async def verify_chain(session: AsyncSession) -> list[int]:
-    """Return the seq numbers whose stored hash does not recompute."""
-    rows = (await session.execute(select(AuditLog).order_by(AuditLog.seq))).scalars().all()
+async def _chain_rows(session: AsyncSession) -> list[AuditLog]:
+    return list((await session.execute(select(AuditLog).order_by(AuditLog.seq))).scalars().all())
+
+
+def _scan_chain(rows: list[AuditLog]) -> tuple[list[int], int]:
+    """Single pass over ordered rows: bad seqs plus rows examined."""
     bad: list[int] = []
     expected_prev = GENESIS_PREV_HASH
     for row in rows:
@@ -241,4 +245,77 @@ async def verify_chain(session: AsyncSession) -> list[int]:
         if row.prev_hash != expected_prev or compute_hash(fields) != row.hash:
             bad.append(row.seq)
         expected_prev = row.hash
+    return bad, len(rows)
+
+
+async def verify_chain(session: AsyncSession) -> list[int]:
+    """Return the seq numbers whose stored hash does not recompute."""
+    bad, _ = _scan_chain(await _chain_rows(session))
     return bad
+
+
+@dataclass
+class VerifySummary:
+    valid: bool
+    checked_count: int
+    head_hash: str | None
+    bad_seq_numbers: list[int]
+
+
+async def verify_summary(session: AsyncSession) -> VerifySummary:
+    """Full chain recompute plus head hash from one ordered scan.
+
+    head_hash and bad_seq_numbers describe the snapshot read here, before any
+    audit row this call may append afterwards.
+    """
+    rows = await _chain_rows(session)
+    bad, checked = _scan_chain(rows)
+    return VerifySummary(
+        valid=not bad,
+        checked_count=checked,
+        head_hash=rows[-1].hash if rows else None,
+        bad_seq_numbers=bad,
+    )
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+async def list_entries(
+    session: AsyncSession,
+    *,
+    cursor: int | None = None,
+    limit: int = 50,
+    actor_username: str | None = None,
+    action: str | None = None,
+    outcome: str | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    occurred_after: datetime | None = None,
+    occurred_before: datetime | None = None,
+) -> tuple[list[AuditLog], int | None]:
+    """Newest first page of audit entries; next_cursor is the last row's seq."""
+    stmt = select(AuditLog)
+    if actor_username is not None:
+        stmt = stmt.where(AuditLog.actor_username == actor_username)
+    if action is not None:
+        stmt = stmt.where(AuditLog.action == action)
+    if outcome is not None:
+        stmt = stmt.where(AuditLog.outcome == outcome)
+    if target_type is not None:
+        stmt = stmt.where(AuditLog.target_type == target_type)
+    if target_id is not None:
+        stmt = stmt.where(AuditLog.target_id == target_id)
+    if occurred_after is not None:
+        stmt = stmt.where(AuditLog.occurred_at >= _as_utc(occurred_after))
+    if occurred_before is not None:
+        stmt = stmt.where(AuditLog.occurred_at <= _as_utc(occurred_before))
+    if cursor is not None:
+        stmt = stmt.where(AuditLog.seq < cursor)
+    stmt = stmt.order_by(AuditLog.seq.desc()).limit(limit)
+    rows = list((await session.execute(stmt)).scalars().all())
+    next_cursor = rows[-1].seq if len(rows) == limit else None
+    return rows, next_cursor

@@ -15,15 +15,16 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 2   | Coding standards & tooling         | Foundation | planned     |
 | 3   | Data model                         | Foundation | done        |
 | 4   | Core classified document loop      | Slice 1    | done        |
-| 5   | MFA & login protection             | Slice 2    | in-progress |
-| 6   | Administration & account lifecycle | Slice 3    | in-progress |
-| 7   | Auditor access & log verification  | Slice 4    | planned     |
+| 5   | MFA & login protection             | Slice 2    | done        |
+| 6   | Administration & account lifecycle | Slice 3    | done        |
+| 7   | Auditor access & log verification  | Slice 4    | done        |
 | 8   | Document version history           | Slice 5    | planned     |
 | 9   | Full text search                   | Slice 6    | planned     |
 | 10  | Per user sharing                   | Slice 7    | planned     |
 | 11  | Access alerts                      | Slice 8    | planned     |
 | 12  | Runnable demo packaging · Alpha    | Slice 9    | planned     |
 | 13  | Maintenance & retention            | Hardening  | planned     |
+| 14  | Audit log export                   | Hardening  | planned     |
 
 ## Foundations
 
@@ -45,7 +46,7 @@ Ratify the stated stack (Python, FastAPI, Pydantic, PostgreSQL with SQLite for d
 Capture conventions from the real scaffolded project, then install lint, format, type strictness, and pre commit enforcement so every later slice follows the same rules.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit hooks run clean on the scaffold.
 
-- [ ] Capture conventions and tooling choices: `/audit`
+- [x] Capture conventions and tooling choices: `/audit`
 
 ### 3. Data model · done
 
@@ -85,7 +86,7 @@ The walking skeleton and the heart of the product: local accounts with Argon2 pa
 
 ## Slice 2: MFA & login protection
 
-### 5. MFA & login protection · in-progress
+### 5. MFA & login protection · done
 
 Thicken the auth strand: TOTP multi factor enrollment and login challenge, rate limiting on credential endpoints, and session revocation so a stolen or stale session cannot keep working.
 **Done when:** login requires a valid TOTP code after enrollment, repeated failures are throttled, and revoked sessions stop working immediately.
@@ -105,7 +106,7 @@ Thicken the auth strand: TOTP multi factor enrollment and login challenge, rate 
 
 ## Slice 3: Administration & account lifecycle
 
-### 6. Administration & account lifecycle · in-progress
+### 6. Administration & account lifecycle · done
 
 Let admins run the user base: change roles and clearances, disable and re-enable accounts, force logout, and reset credentials, with every privilege change itself written to the audit log and its effect on live sessions and existing shares defined.
 **Done when:** an admin can change a user's clearance or role, disable the account, and every one of those actions is audited with the before and after values.
@@ -124,12 +125,22 @@ Let admins run the user base: change roles and clearances, disable and re-enable
 
 ## Slice 4: Auditor access & log verification
 
-### 7. Auditor access & log verification · needs a decision
+### 7. Auditor access & log verification · done
 
 Give the auditor role its own surface: read access to the audit log, an endpoint or report that recomputes the hash chain and proves no entry was edited or deleted, and hard separation so auditors cannot touch documents at all.
 **Done when:** an auditor can browse and verify the log, a tampered entry is detected by verification, and any auditor attempt to read a document is denied and logged.
 
-- [ ] Design it (spec): `/architect auditor access & log verification`
+- [x] Design it (spec): `/architect auditor access & log verification`
+- [x] Build it: `/develop auditor access & log verification`
+  - [x] Audit query and verify services: filtered cursor paginated list, single pass verify summary (AC-1 to AC-4, AC-10)
+  - [x] API surface: `/v1/audit` router, schemas, role gates, `GATE_ACTIONS` entries (AC-6, AC-8)
+  - [x] Verify self audit and rate limit: `audit.verify` row, `RATE_LIMIT_AUDIT` setting (AC-5, AC-9)
+  - [x] Test suite: filters, pagination, tamper detection, role denials, MFA gate, rate limit (AC-1 to AC-10)
+- [x] Verify it: `/check verify auditor access & log verification`
+- [x] Test it: `/test auditor access & log verification`
+- [x] Review it (fresh model): `/check review auditor access & log verification`
+- [x] Document it: `/document auditor access & log verification`
+      Spec [0006](../specs/0006-auditor-access-log-verification.md)
 
 ## Slice 5: Document version history
 
@@ -184,6 +195,13 @@ Keep the system tidy over time: expired and consumed `mfa_challenges` rows, stal
 **Done when:** expired challenges and orphaned blobs are removed by a defined mechanism, the cleanup itself is audited or logged, and no live data is ever collected.
 
 - [ ] Design it (spec): `/architect maintenance & retention`
+
+### 14. Audit log export
+
+Let auditors pull a filtered slice of the audit log as a file (CSV or JSON) for offline evidence, reusing the same filters as the entries endpoint. Surfaced by spec 0006 follow-up; the in app verify already exposes `head_hash` for external checkpointing.
+**Done when:** an auditor can export a filtered audit range to a file, the export is itself audited, and auditors remain the only role that can do it.
+
+- [ ] Design it (spec): `/architect audit log export`
 
 ## Deferred
 

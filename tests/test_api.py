@@ -889,15 +889,11 @@ async def test_audit_actor_snapshot_survives_later_demotion(client, session_fact
     target = await make_user(session_factory, "target21")
     await auth_client(client, "admin26")
 
-    assert (
-        await client.patch(f"/v1/users/{target.id}", json={"clearance": 3})
-    ).status_code == 200
+    assert (await client.patch(f"/v1/users/{target.id}", json={"clearance": 3})).status_code == 200
 
     other = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
     await auth_client(other, "admin27")
-    assert (
-        await other.patch(f"/v1/users/{actor.id}", json={"role": "user"})
-    ).status_code == 200
+    assert (await other.patch(f"/v1/users/{actor.id}", json={"role": "user"})).status_code == 200
     await other.aclose()
 
     rows = [

@@ -25,7 +25,7 @@ async def client(session_factory):
 
     from httpx import ASGITransport, AsyncClient
 
-    from app.core.database import get_db
+    from app.core.database import get_db, get_session_factory
     from app.main import app
 
     async def override_get_db():
@@ -33,6 +33,7 @@ async def client(session_factory):
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         yield http
     app.dependency_overrides.clear()

@@ -58,6 +58,8 @@ GATE_ACTIONS: dict[tuple[str, str], str] = {
     ("POST", "/v1/users/{user_id}/sessions/revoke"): "session.revoke_all",
     ("POST", "/v1/users/{user_id}/reset-password"): "user.password_reset",
     ("POST", "/v1/users/{user_id}/mfa/reset"): "mfa.reset",
+    ("GET", "/v1/audit/entries"): "audit.entries_list",
+    ("POST", "/v1/audit/verify"): "audit.verify",
 }
 
 

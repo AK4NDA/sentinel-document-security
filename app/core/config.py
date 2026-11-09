@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_default: str = "100/minute"
     rate_limit_auth: str = "10/minute"
+    rate_limit_audit: str = "30/minute"
     totp_issuer: str = "Sentinel"
     mfa_challenge_ttl_seconds: int = Field(default=300, gt=0)
     totp_skew_steps: int = Field(default=1, ge=0)
