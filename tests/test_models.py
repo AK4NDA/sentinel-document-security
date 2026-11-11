@@ -283,23 +283,23 @@ async def test_audit_log_and_alerts_survive_document_delete(sessionmaker):
         doc = await make_document(session, owner)
         await session.commit()
         doc_id = doc.id
-        session.add(
-            AuditLog(
-                occurred_at=datetime.now(UTC),
-                actor_id=owner.id,
-                action="document.delete",
-                outcome="allowed",
-                target_type="document",
-                target_id=str(doc_id),
-                hash="d" * 64,
-            )
+        audit_row = AuditLog(
+            occurred_at=datetime.now(UTC),
+            actor_id=owner.id,
+            action="document.delete",
+            outcome="allowed",
+            target_type="document",
+            target_id=str(doc_id),
+            hash="d" * 64,
         )
+        session.add(audit_row)
+        await session.flush()
         session.add(
             Alert(
-                alert_type="access.denied",
-                severity="warning",
-                document_id=doc_id,
+                alert_type="denied_access",
                 actor_id=owner.id,
+                summary={},
+                audit_seq=audit_row.seq,
             )
         )
         await session.commit()
@@ -508,25 +508,35 @@ async def test_audit_log_id_unique_and_required_columns(sessionmaker):
 async def test_alert_fields_round_trip(sessionmaker):
     async with sessionmaker() as session:
         owner = await make_user(session)
+        audit_row = AuditLog(
+            occurred_at=datetime.now(UTC),
+            actor_id=owner.id,
+            action="document.read",
+            outcome="denied",
+            target_type="document",
+            target_id=str(uuid.uuid4()),
+            hash="f" * 64,
+        )
+        session.add(audit_row)
+        await session.flush()
         now = datetime.now(UTC)
         alert = Alert(
-            alert_type="access.denied",
-            severity="high",
-            document_id=uuid.uuid4(),
+            alert_type="denied_access",
             actor_id=owner.id,
-            details={"attempts": 3},
-            fingerprint="fp-123",
-            created_at=now,
+            actor_username=owner.username,
+            summary={"action": "document.read", "outcome": "denied"},
+            audit_seq=audit_row.seq,
             acknowledged_at=now,
-            acknowledged_by=owner.id,
+            acknowledged_by_id=owner.id,
+            acknowledged_by_username=owner.username,
         )
         session.add(alert)
         await session.commit()
         stored = (await session.execute(select(Alert))).scalar_one()
-        assert stored.fingerprint == "fp-123"
-        assert stored.details == {"attempts": 3}
-        assert stored.acknowledged_by == owner.id
-        assert stored.document_id is not None
+        assert stored.summary == {"action": "document.read", "outcome": "denied"}
+        assert stored.audit_seq == audit_row.seq
+        assert stored.acknowledged_by_id == owner.id
+        assert stored.actor_username == owner.username
 
 
 async def test_user_secret_and_lockout_fields_store_binary_and_datetimes(sessionmaker):
@@ -586,7 +596,7 @@ async def test_required_indexes_exist(sessionmaker):
         },
         "sessions": {"ix_sessions_user_id", "ix_sessions_expires_at"},
         "audit_log": {"ix_audit_log_occurred_at", "ix_audit_log_target_id"},
-        "alerts": {"ix_alerts_created_at"},
+        "alerts": {"ix_alerts_state_audit_seq", "ix_alerts_actor_type_created"},
     }
     async with sessionmaker() as session:
         for table, names in expected.items():

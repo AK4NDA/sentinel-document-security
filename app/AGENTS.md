@@ -14,6 +14,8 @@ Layered monolith. Routers in `api/` are thin: they parse requests, call one serv
 | `api/deps.py` | Session auth dependencies: cookie and Bearer, per request user re-read, MFA enrollment gate |
 | `services/policy.py` | Deny by default access checks (clearance, role) |
 | `services/audit.py` | Hash chained audit append, canonical hashing, `verify_chain`, `verify_summary`, `list_entries` |
+| `services/alerts.py` | Alert classifier hooked inside `audit.append`, hourly cap, alert feed list and acknowledge |
+| `api/alerts.py` | `GET /v1/alerts` and `POST /v1/alerts/{id}/acknowledge` for admin and auditor |
 | `services/documents.py` | Document loop: upload, read, version, delete with policy + audit |
 | `services/mfa.py` | TOTP enrollment, pending challenge tokens, verify exchange |
 | `services/sessions.py` | Opaque token issue, SHA-256 storage, sliding expiry, revocation |
@@ -28,6 +30,7 @@ Layered monolith. Routers in `api/` are thin: they parse requests, call one serv
 - Async everywhere: services take `AsyncSession`, endpoints use `Depends`; blocking crypto goes through `anyio.to_thread`.
 - One audited behavior per route: success, denial, and enrollment gate share one action name; allow and deny commit in the same transaction as the mutation.
 - Audit actor is stored as a snapshot (id, username, role), never a live FK, so records survive deletes.
+- The alert classifier runs inside `audit.append` on every append path; `alert.*` actions never raise alerts, and `ALERT_HOURLY_CAP` (default 20) caps alerts per actor per type per rolling hour as a best effort bound.
 - Classification is an `IntEnum` rank 1 to 5 (`UNCLASSIFIED` to `TOP_SECRET`); read allowed when `user.clearance >= classification`, writes pinned to the writer's clearance (strict no write down).
 - `mfa_challenges` and sessions store only SHA-256 token hashes; TOTP secrets are AES-GCM sealed on the user row.
 - Account lockout (5 failures, 15 minutes) is shared across login, MFA verify, and enroll confirm via `services/lockout.py`.
@@ -51,5 +54,6 @@ Layered monolith. Routers in `api/` are thin: they parse requests, call one serv
 - [0007 document version history](../docs/specs/0007-document-version-history/index.md)
 - [0008 full text search](../docs/specs/0008-full-text-search/index.md)
 - [0009 per user document sharing](../docs/specs/0009-per-user-document-sharing/index.md)
+- [0010 access alerts](../docs/specs/0010-access-alerts/index.md)
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

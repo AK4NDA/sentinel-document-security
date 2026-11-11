@@ -261,8 +261,7 @@ async def test_verify_detects_tampered_entry(client, session_factory):
     assert body["head_hash"] == snapshot_head
 
     verify_rows = await audit_rows(session_factory)
-    self_audit = verify_rows[-1]
-    assert self_audit.action == "audit.verify"
+    self_audit = next(r for r in verify_rows if r.action == "audit.verify")
     assert self_audit.details["valid"] is False
     assert self_audit.details["bad_count"] == len(body["bad_seq_numbers"])
     assert self_audit.details["checked_count"] == body["checked_count"]

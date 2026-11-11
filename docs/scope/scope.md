@@ -21,7 +21,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 8   | Document version history           | Slice 5    | done        |
 | 9   | Full text search                   | Slice 6    | done        |
 | 10  | Per user sharing                   | Slice 7    | done        |
-| 11  | Access alerts                      | Slice 8    | planned     |
+| 11  | Access alerts                      | Slice 8    | done |
 | 12  | Runnable demo packaging · Alpha    | Slice 9    | planned     |
 | 13  | Maintenance & retention            | Hardening  | planned     |
 | 14  | Audit log export                   | Hardening  | planned     |
@@ -201,12 +201,22 @@ Layer named user grants on top of the policy model so a document can be shared w
 
 ## Slice 8: Access alerts
 
-### 11. Access alerts · needs a decision
+### 11. Access alerts · done
 
 Surface the interesting events: denied attempts, access to the most sensitive classifications, privilege changes, and failed audit chain verifications generate alert records that admins and auditors can review. The channel decision (in app records versus email) is the open question; recommend in app records to keep the demo self contained.
 **Done when:** a denied access attempt and a Top Secret read each produce an alert record visible to admins and auditors, and alert generation is itself audited.
 
-- [ ] Design it (spec): `/architect access alerts`
+- [x] Design it (spec): `/architect access alerts`
+- [x] Build it: `/develop access alerts`
+  - [x] Schema and classifier core: `alerts` migration and model, `ALERT_HOURLY_CAP` setting, classifier hooked inside `audit.append` with `alert.raise` entries (AC-1, AC-5, AC-6, AC-10, AC-11)
+  - [x] Remaining triggers: `sensitive_read` on Top Secret content downloads, `privilege_change` on allowed admin mutations, `chain_tamper` on failed verify (AC-2, AC-3, AC-4)
+  - [x] Alert list API: `GET /v1/alerts` with filters, `audit_seq` cursor pagination, role gates and `alert.list` audit entries (AC-7, AC-9 read side)
+  - [x] Acknowledge API and test suite: conditional update, self acknowledge block, 404/409 handling, `alert.acknowledge` entries, full AC coverage (AC-8, AC-9, all ACs)
+- [x] Verify it: `/check verify access alerts`
+- [x] Test it: `/test access alerts`
+- [x] Review it (fresh model): `/check review access alerts`
+- [x] Document it: `/document access alerts`
+      Spec [0010](../specs/0010-access-alerts/index.md)
 
 ## Slice 9: Runnable demo packaging · Alpha
 
@@ -244,6 +254,8 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **WebAuthn or hardware keys**: phishing resistant second factor to replace or augment TOTP · needs a decision
 - **MFA recovery codes**: backup codes for lost authenticators; admin reset covers this for now · needs a decision
 - **Search at scale**: blind index or per clearance tier indexes plus relevance ranking if the corpus outgrows the current scan · from spec 0008 · needs a decision
+- **Auth failure alerts**: extend the alert classifier to login and MFA failures · from spec 0010 · needs a decision
+- **Alert triage workflow**: unacknowledge, assignment, or severity on alert records · from spec 0010 · needs a decision
 - **Production deployment hardening**: KMS or HSM key management, object storage, and a shared rate limit store for multi worker deploys · from spec 0001 · needs a decision
 - **Step up re authentication for admin actions**: a fresh password or TOTP prompt before destructive admin operations · from spec 0005 · needs a decision
 - **Forced password change flag**: a permanent "must change password" account state for operations · from spec 0005 · needs a decision

@@ -147,6 +147,10 @@ async def append(
         if _is_chain_fork(exc):
             raise AuditChainFork() from exc
         raise
+    # Lazy import: alerts calls back into append for alert.raise entries.
+    from app.services import alerts as alerts_service
+
+    await alerts_service.maybe_raise(session, entry)
     return entry
 
 

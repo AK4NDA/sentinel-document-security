@@ -24,6 +24,20 @@ def test_master_key_accepts_base64_32_bytes() -> None:
     assert settings.master_key.get_secret_value() == encoded
 
 
+def test_alert_hourly_cap_defaults_to_20() -> None:
+    settings = Settings(master_key=base64.b64encode(b"x" * 32).decode("ascii"))
+
+    assert settings.alert_hourly_cap == 20
+
+
+def test_alert_hourly_cap_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            master_key=base64.b64encode(b"x" * 32).decode("ascii"),
+            alert_hourly_cap=0,
+        )
+
+
 def test_cors_origins_are_parsed_as_a_list() -> None:
     settings = Settings(
         master_key=base64.b64encode(b"x" * 32).decode("ascii"),

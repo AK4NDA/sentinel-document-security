@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     totp_skew_steps: int = Field(default=1, ge=0)
     login_max_attempts: int = Field(default=5, gt=0)
     login_lockout_seconds: int = Field(default=900, gt=0)
+    alert_hourly_cap: int = Field(default=20, gt=0)
 
     @field_validator("master_key")
     @classmethod
