@@ -226,11 +226,11 @@ Make the whole thing boot with one Docker command: container images for the API 
 **Done when:** one compose command starts the system, seeded users can log in and hit the documented walkthrough, and the audit log shows the full trail.
 
 - [x] Design it (spec): `/architect runnable demo packaging`
-- [ ] Build it: `/develop runnable demo packaging`
-  - [ ] Demo cast and seed command: shared constants module, `seed-demo` CLI with dev only guard, enrolled TOTP secrets, idempotent repair, audit entries (AC-2 to AC-6)
-  - [ ] Walkthrough script core: httpx client, TOTP login helper, step runner, localhost and rate limit handling (AC-8, AC-9, AC-11)
-  - [ ] Full tour steps: document lifecycle, denied read, versions, search, share, alerts, audit verify, runtime fixtures (AC-7, AC-10)
-  - [ ] Docs and end to end proof: `docs/demo/walkthrough.md` quickstart, compose up plus seed plus run, audit chain valid (AC-1, AC-12, AC-13)
+- [x] Build it: `/develop runnable demo packaging`
+  - [x] Demo cast and seed command: shared constants module, `seed-demo` CLI with dev only guard, enrolled TOTP secrets, idempotent repair, audit entries (AC-2 to AC-6)
+  - [x] Walkthrough script core: httpx client, TOTP login helper, step runner, localhost and rate limit handling (AC-8, AC-9, AC-11)
+  - [x] Full tour steps: document lifecycle, denied read, versions, search, share, alerts, audit verify, runtime fixtures (AC-7, AC-10)
+  - [x] Docs and end to end proof: `docs/demo/walkthrough.md` quickstart, compose up plus seed plus run, audit chain valid (AC-1, AC-12, AC-13)
 - [ ] Verify it: `/check verify runnable demo packaging`
       Spec [0011](../specs/0011-runnable-demo-packaging/index.md)
 
