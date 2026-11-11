@@ -231,7 +231,7 @@ Make the whole thing boot with one Docker command: container images for the API 
   - [x] Walkthrough script core: httpx client, TOTP login helper, step runner, localhost and rate limit handling (AC-8, AC-9, AC-11)
   - [x] Full tour steps: document lifecycle, denied read, versions, search, share, alerts, audit verify, runtime fixtures (AC-7, AC-10)
   - [x] Docs and end to end proof: `docs/demo/walkthrough.md` quickstart, compose up plus seed plus run, audit chain valid (AC-1, AC-12, AC-13)
-- [ ] Verify it: `/check verify runnable demo packaging`
+- [x] Verify it: `/check verify runnable demo packaging`
       Spec [0011](../specs/0011-runnable-demo-packaging/index.md)
 
 ## Hardening
