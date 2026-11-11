@@ -4,11 +4,13 @@ import pyotp
 import pytest
 from sqlalchemy import func, select
 
+import app.cli as cli_module
 from app.core.config import get_settings
 from app.demo_constants import BY_USERNAME, DEMO_USERS
 from app.models import AuditLog, User
+from app.security import totp as totp_security
 from app.services import audit as audit_service
-from app.services.demo import SeedEnvRefused, seed_demo
+from app.services.demo import SeedEnvRefused, SeedResult, seed_demo
 
 
 async def _demo_login(client, demo_user) -> None:
@@ -83,6 +85,27 @@ async def test_seed_repairs_drifted_users(client, session_factory):
     await _demo_login(client, drifted)
 
 
+async def test_seed_repairs_wrong_totp_secret(client, session_factory):
+    await seed_demo(session_factory)
+    demo = BY_USERNAME["demo-officer-high"]
+    async with session_factory() as session:
+        user = (
+            await session.execute(select(User).where(User.username == demo.username))
+        ).scalar_one()
+        user.totp_secret_encrypted = totp_security.seal_secret("JBSWY3DPEHPK3PXP")
+        await session.commit()
+
+    results = await seed_demo(session_factory)
+    assert {r.username: r.status for r in results}[demo.username] == "repaired"
+
+    async with session_factory() as session:
+        user = (
+            await session.execute(select(User).where(User.username == demo.username))
+        ).scalar_one()
+    assert totp_security.open_secret(user.totp_secret_encrypted) == demo.totp_secret
+    await _demo_login(client, demo)
+
+
 async def test_seed_refuses_non_dev_env(session_factory, monkeypatch):
     monkeypatch.setenv("ENV", "prod")
     get_settings.cache_clear()
@@ -114,3 +137,54 @@ async def test_seed_writes_audit_entries_and_chain_verifies(session_factory):
             isinstance(row.details, dict) and row.details.get("via") == "seed-demo" for row in rows
         )
         assert await audit_service.verify_chain(session) == []
+
+
+# --- CLI wiring ------------------------------------------------------------
+
+
+def _stub_seed(monkeypatch, outcome):
+    async def fake_seed(session_factory):
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(cli_module, "seed_demo", fake_seed)
+
+
+def test_cli_seed_demo_prints_per_user_status(capsys, monkeypatch):
+    _stub_seed(
+        monkeypatch,
+        [SeedResult(u.username, "exists") for u in DEMO_USERS],
+    )
+    assert cli_module.main(["seed-demo"]) == 0
+    out = capsys.readouterr().out
+    assert "exists: demo-admin" in out
+    assert "5 unchanged" in out
+
+
+def test_cli_seed_demo_reports_created_and_repaired(capsys, monkeypatch):
+    _stub_seed(
+        monkeypatch,
+        [
+            SeedResult("demo-admin", "created"),
+            SeedResult("demo-auditor", "repaired"),
+            *[SeedResult(u.username, "exists") for u in DEMO_USERS[2:]],
+        ],
+    )
+    assert cli_module.main(["seed-demo"]) == 0
+    out = capsys.readouterr().out
+    assert "1 created, 1 repaired, 3 unchanged" in out
+
+
+def test_cli_seed_demo_env_refusal_exits_2(capsys, monkeypatch):
+    _stub_seed(monkeypatch, SeedEnvRefused("seed-demo only runs when ENV is dev"))
+    assert cli_module.main(["seed-demo"]) == 2
+    assert "ENV is dev" in capsys.readouterr().err
+
+
+def test_cli_seed_demo_integrity_error_exits_1(capsys, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+
+    _stub_seed(monkeypatch, IntegrityError("stmt", {}, Exception("dup")))
+    assert cli_module.main(["seed-demo"]) == 1
+    assert "uniqueness conflict" in capsys.readouterr().err
