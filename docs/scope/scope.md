@@ -215,7 +215,7 @@ Surface the interesting events: denied attempts, access to the most sensitive cl
 - [x] Verify it: `/check verify access alerts`
 - [x] Test it: `/test access alerts`
 - [x] Review it (fresh model): `/check review access alerts`
-- [ ] Document it: `/document access alerts`
+- [x] Document it: `/document access alerts`
       Spec [0010](../specs/0010-access-alerts/index.md)
 
 ## Slice 9: Runnable demo packaging · Alpha
