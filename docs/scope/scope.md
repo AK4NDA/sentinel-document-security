@@ -214,7 +214,7 @@ Surface the interesting events: denied attempts, access to the most sensitive cl
   - [x] Acknowledge API and test suite: conditional update, self acknowledge block, 404/409 handling, `alert.acknowledge` entries, full AC coverage (AC-8, AC-9, all ACs)
 - [x] Verify it: `/check verify access alerts`
 - [x] Test it: `/test access alerts`
-- [ ] Review it (fresh model): `/check review access alerts`
+- [x] Review it (fresh model): `/check review access alerts`
 - [ ] Document it: `/document access alerts`
       Spec [0010](../specs/0010-access-alerts/index.md)
 
