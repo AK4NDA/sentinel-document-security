@@ -21,6 +21,7 @@ services:
       RATE_LIMIT_AUDIT: ${RATE_LIMIT_AUDIT:-30/minute}
       RATE_LIMIT_SEARCH: ${RATE_LIMIT_SEARCH:-30/minute}
       RATE_LIMIT_USER_LOOKUP: ${RATE_LIMIT_USER_LOOKUP:-30/minute}
+      ALERT_HOURLY_CAP: ${ALERT_HOURLY_CAP:-20}
     ports:
       - "${API_PORT:-8000}:${API_PORT:-8000}"
     volumes:
