@@ -22,7 +22,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 9   | Full text search                   | Slice 6    | done        |
 | 10  | Per user sharing                   | Slice 7    | done        |
 | 11  | Access alerts                      | Slice 8    | done |
-| 12  | Runnable demo packaging · Alpha    | Slice 9    | planned     |
+| 12  | Runnable demo packaging · Alpha    | Slice 9    | in-progress |
 | 13  | Maintenance & retention            | Hardening  | planned     |
 | 14  | Audit log export                   | Hardening  | planned     |
 
@@ -220,12 +220,19 @@ Surface the interesting events: denied attempts, access to the most sensitive cl
 
 ## Slice 9: Runnable demo packaging · Alpha
 
-### 12. Runnable demo packaging
+### 12. Runnable demo packaging · in-progress
 
 Make the whole thing boot with one Docker command: container images for the API and database, compose wiring, seed data covering every role and clearance, and a short scripted walkthrough that exercises allow and deny paths for a demo.
 **Done when:** one compose command starts the system, seeded users can log in and hit the documented walkthrough, and the audit log shows the full trail.
 
+- [x] Design it (spec): `/architect runnable demo packaging`
 - [ ] Build it: `/develop runnable demo packaging`
+  - [ ] Demo cast and seed command: shared constants module, `seed-demo` CLI with dev only guard, enrolled TOTP secrets, idempotent repair, audit entries (AC-2 to AC-6)
+  - [ ] Walkthrough script core: httpx client, TOTP login helper, step runner, localhost and rate limit handling (AC-8, AC-9, AC-11)
+  - [ ] Full tour steps: document lifecycle, denied read, versions, search, share, alerts, audit verify, runtime fixtures (AC-7, AC-10)
+  - [ ] Docs and end to end proof: `docs/demo/walkthrough.md` quickstart, compose up plus seed plus run, audit chain valid (AC-1, AC-12, AC-13)
+- [ ] Verify it: `/check verify runnable demo packaging`
+      Spec [0011](../specs/0011-runnable-demo-packaging/index.md)
 
 ## Hardening
 
@@ -251,6 +258,7 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **SSO and enterprise IdP**: single sign on for defence organisations · needs a decision
 - **Email alert channel**: deliver access alerts by email in addition to in app records · needs a decision
 - **Document export and printing**: controlled export of documents out of the system · needs a decision · GA
+- **Makefile or compose profile for the demo**: wrap the three demo commands (compose up, seed, walkthrough) in one target if the manual flow proves awkward · from spec 0011 · needs a decision
 - **WebAuthn or hardware keys**: phishing resistant second factor to replace or augment TOTP · needs a decision
 - **MFA recovery codes**: backup codes for lost authenticators; admin reset covers this for now · needs a decision
 - **Search at scale**: blind index or per clearance tier indexes plus relevance ranking if the corpus outgrows the current scan · from spec 0008 · needs a decision
