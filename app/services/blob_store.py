@@ -23,14 +23,25 @@ def _write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
+def _claim_existing(path: Path) -> bool:
+    """Refresh mtime on an existing blob so retention sees it as in use."""
+    try:
+        os.utime(path, None)
+    except OSError:
+        return False
+    return True
+
+
 async def store(plaintext: bytes) -> tuple[str, str]:
     """Encrypt and persist; returns (relative blob_path, plaintext sha256)."""
     digest = await asyncio.to_thread(_digest, plaintext)
     path = blob_path_for(digest)
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        ciphertext = await asyncio.to_thread(encryption.seal, plaintext)
-        await asyncio.to_thread(_write_atomic, path, ciphertext)
+    if await asyncio.to_thread(_claim_existing, path):
+        relative = path.relative_to(get_settings().upload_dir).as_posix()
+        return relative, digest
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ciphertext = await asyncio.to_thread(encryption.seal, plaintext)
+    await asyncio.to_thread(_write_atomic, path, ciphertext)
     relative = path.relative_to(get_settings().upload_dir).as_posix()
     return relative, digest
 

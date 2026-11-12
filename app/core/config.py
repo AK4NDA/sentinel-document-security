@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     login_max_attempts: int = Field(default=5, gt=0)
     login_lockout_seconds: int = Field(default=900, gt=0)
     alert_hourly_cap: int = Field(default=20, gt=0)
+    maintenance_interval_seconds: int = Field(default=3600, ge=0)
+    maintenance_share_alert_retention_days: int = Field(default=90, gt=0)
+    maintenance_blob_min_age_seconds: int = Field(default=3600, gt=0)
 
     @field_validator("master_key")
     @classmethod
