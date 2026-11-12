@@ -22,7 +22,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 9   | Full text search                   | Slice 6    | done        |
 | 10  | Per user sharing                   | Slice 7    | done        |
 | 11  | Access alerts                      | Slice 8    | done |
-| 12  | Runnable demo packaging · Alpha    | Slice 9    | in-progress |
+| 12  | Runnable demo packaging · Alpha    | Slice 9    | done        |
 | 13  | Maintenance & retention            | Hardening  | planned     |
 | 14  | Audit log export                   | Hardening  | planned     |
 
@@ -220,7 +220,7 @@ Surface the interesting events: denied attempts, access to the most sensitive cl
 
 ## Slice 9: Runnable demo packaging · Alpha
 
-### 12. Runnable demo packaging · in-progress
+### 12. Runnable demo packaging · done
 
 Make the whole thing boot with one Docker command: container images for the API and database, compose wiring, seed data covering every role and clearance, and a short scripted walkthrough that exercises allow and deny paths for a demo.
 **Done when:** one compose command starts the system, seeded users can log in and hit the documented walkthrough, and the audit log shows the full trail.
@@ -233,6 +233,8 @@ Make the whole thing boot with one Docker command: container images for the API 
   - [x] Docs and end to end proof: `docs/demo/walkthrough.md` quickstart, compose up plus seed plus run, audit chain valid (AC-1, AC-12, AC-13)
 - [x] Verify it: `/check verify runnable demo packaging`
       Spec [0011](../specs/0011-runnable-demo-packaging/index.md)
+- [x] Test it: `/test runnable demo packaging`
+- [x] Review it (fresh model): `/check review runnable demo packaging`
 
 ## Hardening
 
