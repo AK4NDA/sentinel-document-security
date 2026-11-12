@@ -428,8 +428,13 @@ class Walkthrough:
         raise StepFailed(f"api not ready within {READY_TIMEOUT_SECONDS}s: {last}")
 
     def run(self) -> int:
-        self.wait_ready()
         try:
+            try:
+                self.wait_ready()
+            except StepFailed as exc:
+                print("== api readiness")
+                print(f"   FAIL: {exc}")
+                return 1
             for label, step in self.steps():
                 print(f"== {label}")
                 try:
