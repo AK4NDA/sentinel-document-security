@@ -23,7 +23,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 10  | Per user sharing                   | Slice 7    | done        |
 | 11  | Access alerts                      | Slice 8    | done |
 | 12  | Runnable demo packaging · Alpha    | Slice 9    | done        |
-| 13  | Maintenance & retention            | Hardening  | in-progress |
+| 13  | Maintenance & retention            | Hardening  | done        |
 | 14  | Audit log export                   | Hardening  | planned     |
 
 ## Foundations
@@ -238,7 +238,7 @@ Make the whole thing boot with one Docker command: container images for the API 
 
 ## Hardening
 
-### 13. Maintenance & retention · in-progress
+### 13. Maintenance & retention · done
 
 Keep the system tidy over time: expired and consumed `mfa_challenges` rows, stale sessions, and orphaned encrypted blobs left behind by document deletes and version churn get a cleanup story, either a scheduled job or an explicit retention policy. Blob collection must dedupe by `blob_path` across all `document_versions` rows since restores share paths. Surfaced by spec 0004, spec 0003, and spec 0007 follow ups.
 **Done when:** expired challenges and orphaned blobs are removed by a defined mechanism, the cleanup itself is audited or logged, and no live data is ever collected.
@@ -253,7 +253,7 @@ Keep the system tidy over time: expired and consumed `mfa_challenges` rows, stal
 - [x] Verify it: `/check verify maintenance & retention`
 - [x] Test it: `/test maintenance & retention`
 - [x] Review it (fresh model): `/check review maintenance & retention`
-- [ ] Document it: `/document maintenance & retention`
+- [x] Document it: `/document maintenance & retention`
       Spec [0012](../specs/0012-maintenance-retention.md) · code in `app/services/maintenance.py`, `app/cli.py`, `app/main.py`
 
 ### 14. Audit log export

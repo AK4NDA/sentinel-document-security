@@ -1,7 +1,7 @@
 # 0012. Maintenance and retention job
 
 **Date**: 2026-11-12
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
