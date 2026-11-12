@@ -8,11 +8,13 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models import ClassificationLevel, User, UserRole
 from app.security.passwords import hash_password_async
 from app.services import audit
 from app.services.demo import SeedEnvRefused, seed_demo
+from app.services.maintenance import run_cleanup
 
 
 async def _create_admin(args: argparse.Namespace) -> int:
@@ -78,6 +80,21 @@ async def _seed_demo(_args: argparse.Namespace) -> int:
     return 0
 
 
+async def _cleanup(args: argparse.Namespace) -> int:
+    try:
+        report = await run_cleanup(SessionLocal, get_settings(), dry_run=args.dry_run)
+    except Exception as exc:
+        print(f"cleanup run failed: {exc}", file=sys.stderr)
+        return 1
+    for stage, error in report.errors.items():
+        print(f"  {stage}: error: {error}", file=sys.stderr)
+    print("dry run" if report.dry_run else "cleanup", "complete")
+    for stage, count in report.stages.items():
+        verb = "would delete" if report.dry_run else "deleted"
+        print(f"  {stage}: {count} {verb}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -87,11 +104,15 @@ def main(argv: list[str] | None = None) -> int:
     admin.add_argument("--clearance", type=int, default=1, choices=range(1, 6))
     admin.add_argument("--display-name", default=None)
     sub.add_parser("seed-demo", help="seed the fixed demo cast (dev only)")
+    cleanup = sub.add_parser("cleanup", help="run retention cleanup once")
+    cleanup.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "create-admin":
         return asyncio.run(_create_admin(args))
     if args.command == "seed-demo":
         return asyncio.run(_seed_demo(args))
+    if args.command == "cleanup":
+        return asyncio.run(_cleanup(args))
     return 2
 
 

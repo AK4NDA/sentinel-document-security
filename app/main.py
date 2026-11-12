@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -15,8 +16,9 @@ from app.api import users as users_router
 from app.api.auth import limiter
 from app.api.health import router as health_router
 from app.core.config import get_settings
-from app.core.database import engine
+from app.core.database import SessionLocal, engine
 from app.core.logging import configure_logging
+from app.services import maintenance
 
 
 @asynccontextmanager
@@ -24,7 +26,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    maintenance_task = None
+    if settings.maintenance_interval_seconds > 0:
+        maintenance_task = asyncio.create_task(maintenance.scheduler_loop(SessionLocal, settings))
     yield
+    if maintenance_task is not None:
+        maintenance_task.cancel()
+        await asyncio.gather(maintenance_task, return_exceptions=True)
     await engine.dispose()
 
 

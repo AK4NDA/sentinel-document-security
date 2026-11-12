@@ -23,7 +23,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 10  | Per user sharing                   | Slice 7    | done        |
 | 11  | Access alerts                      | Slice 8    | done |
 | 12  | Runnable demo packaging · Alpha    | Slice 9    | done        |
-| 13  | Maintenance & retention            | Hardening  | planned     |
+| 13  | Maintenance & retention            | Hardening  | done        |
 | 14  | Audit log export                   | Hardening  | planned     |
 
 ## Foundations
@@ -238,12 +238,23 @@ Make the whole thing boot with one Docker command: container images for the API 
 
 ## Hardening
 
-### 13. Maintenance & retention · needs a decision
+### 13. Maintenance & retention · done
 
 Keep the system tidy over time: expired and consumed `mfa_challenges` rows, stale sessions, and orphaned encrypted blobs left behind by document deletes and version churn get a cleanup story, either a scheduled job or an explicit retention policy. Blob collection must dedupe by `blob_path` across all `document_versions` rows since restores share paths. Surfaced by spec 0004, spec 0003, and spec 0007 follow ups.
 **Done when:** expired challenges and orphaned blobs are removed by a defined mechanism, the cleanup itself is audited or logged, and no live data is ever collected.
 
-- [ ] Design it (spec): `/architect maintenance & retention`
+- [x] Design it (spec): `/architect maintenance & retention`
+- [x] Build it: `/develop maintenance & retention`
+  - [x] Settings fields, `services/maintenance.py` core covering challenges and sessions, the `maintenance.cleanup` audit entry, and the `cleanup` CLI with `--dry-run` (AC-1, AC-4 to AC-10)
+  - [x] Shares and alerts retention stage (AC-2)
+  - [x] Orphaned blob collection stage (AC-3)
+  - [x] Lifespan scheduler with single flight lock and compose env passthrough (AC-6, AC-8)
+  - [x] Full test suite on in memory SQLite (all ACs)
+- [x] Verify it: `/check verify maintenance & retention`
+- [x] Test it: `/test maintenance & retention`
+- [x] Review it (fresh model): `/check review maintenance & retention`
+- [x] Document it: `/document maintenance & retention`
+      Spec [0012](../specs/0012-maintenance-retention.md) · code in `app/services/maintenance.py`, `app/cli.py`, `app/main.py`
 
 ### 14. Audit log export
 
@@ -261,6 +272,8 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Email alert channel**: deliver access alerts by email in addition to in app records · needs a decision
 - **Document export and printing**: controlled export of documents out of the system · needs a decision · GA
 - **Makefile or compose profile for the demo**: wrap the three demo commands (compose up, seed, walkthrough) in one target if the manual flow proves awkward · from spec 0011 · needs a decision
+- **Audit log retention**: decide whether and how old audit entries are ever removed, since chain re anchoring is its own design · from spec 0012 · needs a decision
+- **Alert on maintenance stage failures**: surface repeated `maintenance.cleanup` stage errors through the alerts classifier · from spec 0012 · needs a decision
 - **WebAuthn or hardware keys**: phishing resistant second factor to replace or augment TOTP · needs a decision
 - **MFA recovery codes**: backup codes for lost authenticators; admin reset covers this for now · needs a decision
 - **Search at scale**: blind index or per clearance tier indexes plus relevance ranking if the corpus outgrows the current scan · from spec 0008 · needs a decision
