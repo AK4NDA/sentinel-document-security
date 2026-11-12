@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     maintenance_interval_seconds: int = Field(default=3600, ge=0)
     maintenance_share_alert_retention_days: int = Field(default=90, gt=0)
     maintenance_blob_min_age_seconds: int = Field(default=3600, gt=0)
+    export_max_rows: int = Field(default=50000, gt=0)
 
     @field_validator("master_key")
     @classmethod
