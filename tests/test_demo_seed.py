@@ -106,6 +106,62 @@ async def test_seed_repairs_wrong_totp_secret(client, session_factory):
     await _demo_login(client, demo)
 
 
+async def test_seeded_users_have_expected_profile_fields(session_factory):
+    await seed_demo(session_factory)
+    async with session_factory() as session:
+        users = (await session.execute(select(User))).scalars().all()
+    by_name = {u.username: u for u in users}
+    assert set(by_name) == {d.username for d in DEMO_USERS}
+    for demo in DEMO_USERS:
+        user = by_name[demo.username]
+        assert user.email == demo.email
+        assert user.display_name == demo.display_name
+        assert user.is_active is True
+        assert user.role == demo.role
+        assert user.clearance == demo.clearance
+        assert user.totp_enabled_at is not None
+        assert totp_security.open_secret(user.totp_secret_encrypted) == demo.totp_secret
+
+
+async def test_seed_repair_writes_update_audit_and_chain_verifies(session_factory):
+    await seed_demo(session_factory)
+    drifted = BY_USERNAME["demo-officer-low"]
+    async with session_factory() as session:
+        user = (
+            await session.execute(select(User).where(User.username == drifted.username))
+        ).scalar_one()
+        user.clearance = 1
+        await session.commit()
+
+    await seed_demo(session_factory)
+
+    async with session_factory() as session:
+        rows = (
+            (await session.execute(select(AuditLog).where(AuditLog.action == "user.update")))
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.outcome == "allowed"
+        assert row.actor_id is None
+        assert row.details["via"] == "seed-demo"
+        assert "clearance" in row.details["repaired"]
+        assert await audit_service.verify_chain(session) == []
+
+
+async def test_seed_clean_rerun_writes_no_update_audit(session_factory):
+    await seed_demo(session_factory)
+    await seed_demo(session_factory)
+    async with session_factory() as session:
+        count = (
+            await session.execute(
+                select(func.count()).select_from(AuditLog).where(AuditLog.action == "user.update")
+            )
+        ).scalar_one()
+    assert count == 0
+
+
 async def test_seed_refuses_non_dev_env(session_factory, monkeypatch):
     monkeypatch.setenv("ENV", "prod")
     get_settings.cache_clear()
