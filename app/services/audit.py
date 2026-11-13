@@ -1,13 +1,16 @@
 """Hash chained audit log append and verification (spec 0003 AC-14, AC-15)."""
 
+import csv
 import hashlib
+import io
 import json
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -288,11 +291,9 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-async def list_entries(
-    session: AsyncSession,
+def _apply_filters(
+    stmt,
     *,
-    cursor: int | None = None,
-    limit: int = 50,
     actor_username: str | None = None,
     action: str | None = None,
     outcome: str | None = None,
@@ -300,9 +301,8 @@ async def list_entries(
     target_id: str | None = None,
     occurred_after: datetime | None = None,
     occurred_before: datetime | None = None,
-) -> tuple[list[AuditLog], int | None]:
-    """Newest first page of audit entries; next_cursor is the last row's seq."""
-    stmt = select(AuditLog)
+):
+    """Shared where clauses for entries listing and export (spec 0013)."""
     if actor_username is not None:
         stmt = stmt.where(AuditLog.actor_username == actor_username)
     if action is not None:
@@ -317,9 +317,183 @@ async def list_entries(
         stmt = stmt.where(AuditLog.occurred_at >= _as_utc(occurred_after))
     if occurred_before is not None:
         stmt = stmt.where(AuditLog.occurred_at <= _as_utc(occurred_before))
+    return stmt
+
+
+async def list_entries(
+    session: AsyncSession,
+    *,
+    cursor: int | None = None,
+    limit: int = 50,
+    actor_username: str | None = None,
+    action: str | None = None,
+    outcome: str | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    occurred_after: datetime | None = None,
+    occurred_before: datetime | None = None,
+) -> tuple[list[AuditLog], int | None]:
+    """Newest first page of audit entries; next_cursor is the last row's seq."""
+    stmt = _apply_filters(
+        select(AuditLog),
+        actor_username=actor_username,
+        action=action,
+        outcome=outcome,
+        target_type=target_type,
+        target_id=target_id,
+        occurred_after=occurred_after,
+        occurred_before=occurred_before,
+    )
     if cursor is not None:
         stmt = stmt.where(AuditLog.seq < cursor)
     stmt = stmt.order_by(AuditLog.seq.desc()).limit(limit)
     rows = list((await session.execute(stmt)).scalars().all())
     next_cursor = rows[-1].seq if len(rows) == limit else None
     return rows, next_cursor
+
+
+EXPORT_COLUMNS = (
+    "seq",
+    "id",
+    "occurred_at",
+    "actor_id",
+    "actor_username",
+    "actor_role",
+    "action",
+    "outcome",
+    "target_type",
+    "target_id",
+    "details",
+    "prev_hash",
+    "hash",
+)
+
+_EXPORT_DANGEROUS = ("=", "+", "-", "@", "\t", "\r")
+
+
+async def export_head(session: AsyncSession) -> tuple[int | None, str | None]:
+    """Chain head (seq, hash) for the export snapshot; (None, None) when empty."""
+    result = await session.execute(
+        select(AuditLog.seq, AuditLog.hash).order_by(AuditLog.seq.desc()).limit(1)
+    )
+    row = result.first()
+    return (row.seq, row.hash) if row is not None else (None, None)
+
+
+async def export_count(
+    session: AsyncSession,
+    *,
+    head_seq: int | None,
+    actor_username: str | None = None,
+    action: str | None = None,
+    outcome: str | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    occurred_after: datetime | None = None,
+    occurred_before: datetime | None = None,
+) -> int:
+    """Matching rows inside the snapshot bound; decides truncation up front."""
+    stmt = _apply_filters(
+        select(func.count()).select_from(AuditLog),
+        actor_username=actor_username,
+        action=action,
+        outcome=outcome,
+        target_type=target_type,
+        target_id=target_id,
+        occurred_after=occurred_after,
+        occurred_before=occurred_before,
+    )
+    if head_seq is not None:
+        stmt = stmt.where(AuditLog.seq <= head_seq)
+    return (await session.execute(stmt)).scalar_one()
+
+
+async def export_rows(
+    session: AsyncSession,
+    *,
+    head_seq: int | None,
+    max_rows: int,
+    actor_username: str | None = None,
+    action: str | None = None,
+    outcome: str | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    occurred_after: datetime | None = None,
+    occurred_before: datetime | None = None,
+) -> AsyncIterator[AuditLog]:
+    """Stream matching rows oldest first inside the snapshot, capped at max_rows."""
+    stmt = _apply_filters(
+        select(AuditLog),
+        actor_username=actor_username,
+        action=action,
+        outcome=outcome,
+        target_type=target_type,
+        target_id=target_id,
+        occurred_after=occurred_after,
+        occurred_before=occurred_before,
+    )
+    if head_seq is not None:
+        stmt = stmt.where(AuditLog.seq <= head_seq)
+    stmt = stmt.order_by(AuditLog.seq.asc()).limit(max_rows).execution_options(yield_per=500)
+    result = await session.stream(stmt)
+    try:
+        async for partition in result.partitions():
+            for row in partition:
+                yield row[0]
+    finally:
+        await result.close()
+
+
+def _export_values(row: AuditLog) -> dict[str, Any]:
+    """Logical export row: canonical scalars, details kept as a JSON object."""
+    return {
+        "seq": row.seq,
+        "id": str(row.id),
+        "occurred_at": _canonical(row.occurred_at),
+        "actor_id": str(row.actor_id) if row.actor_id is not None else None,
+        "actor_username": row.actor_username,
+        "actor_role": row.actor_role,
+        "action": row.action,
+        "outcome": row.outcome,
+        "target_type": row.target_type,
+        "target_id": row.target_id,
+        "details": row.details,
+        "prev_hash": row.prev_hash,
+        "hash": row.hash,
+    }
+
+
+def _csv_safe(text: str) -> str:
+    """Prefix cells that could execute as spreadsheet formulas (spec 0013 AC-8)."""
+    if text[:1] in _EXPORT_DANGEROUS or text.lstrip()[:1] in _EXPORT_DANGEROUS:
+        return "'" + text
+    return text
+
+
+def _csv_record(cells: list[str]) -> str:
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="\n").writerow(cells)
+    return buf.getvalue()
+
+
+def export_csv_header() -> str:
+    return _csv_record([_csv_safe(col) for col in EXPORT_COLUMNS])
+
+
+def export_csv_row(row: AuditLog) -> str:
+    values = _export_values(row)
+    cells = []
+    for col in EXPORT_COLUMNS:
+        val = values[col]
+        if val is None:
+            text = ""
+        elif col == "details":
+            text = json.dumps(val, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        else:
+            text = str(val)
+        cells.append(_csv_safe(text))
+    return _csv_record(cells)
+
+
+def export_jsonl_row(row: AuditLog) -> str:
+    return json.dumps(_export_values(row), ensure_ascii=False, separators=(",", ":")) + "\n"

@@ -24,7 +24,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 11  | Access alerts                      | Slice 8    | done |
 | 12  | Runnable demo packaging · Alpha    | Slice 9    | done        |
 | 13  | Maintenance & retention            | Hardening  | done        |
-| 14  | Audit log export                   | Hardening  | planned     |
+| 14  | Audit log export                   | Hardening  | done        |
 
 ## Foundations
 
@@ -256,12 +256,21 @@ Keep the system tidy over time: expired and consumed `mfa_challenges` rows, stal
 - [x] Document it: `/document maintenance & retention`
       Spec [0012](../specs/0012-maintenance-retention.md) · code in `app/services/maintenance.py`, `app/cli.py`, `app/main.py`
 
-### 14. Audit log export
+### 14. Audit log export · done
 
 Let auditors pull a filtered slice of the audit log as a file (CSV or JSON) for offline evidence, reusing the same filters as the entries endpoint. Surfaced by spec 0006 follow-up; the in app verify already exposes `head_hash` for external checkpointing.
 **Done when:** an auditor can export a filtered audit range to a file, the export is itself audited, and auditors remain the only role that can do it.
 
-- [ ] Design it (spec): `/architect audit log export`
+- [x] Design it (spec): `/architect audit log export`
+- [x] Build it: `/develop audit log export`
+  - [x] Settings, shared filters, snapshot pinned export service, CSV endpoint with authz and audit entry (AC-1, AC-3 to AC-8, AC-10, AC-11)
+  - [x] JSONL format path (AC-2, AC-9)
+  - [x] Full test suite on in memory SQLite (all ACs)
+- [x] Verify it: `/check verify audit log export`
+- [x] Test it: `/test audit log export`
+- [x] Review it (fresh model): `/check review audit log export`
+- [x] Document it: `/document audit log export`
+      Spec [0013](../specs/0013-audit-log-export.md) · code in `app/api/audit.py`, `app/services/audit.py`
 
 ## Deferred
 
@@ -274,6 +283,7 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Makefile or compose profile for the demo**: wrap the three demo commands (compose up, seed, walkthrough) in one target if the manual flow proves awkward · from spec 0011 · needs a decision
 - **Audit log retention**: decide whether and how old audit entries are ever removed, since chain re anchoring is its own design · from spec 0012 · needs a decision
 - **Alert on maintenance stage failures**: surface repeated `maintenance.cleanup` stage errors through the alerts classifier · from spec 0012 · needs a decision
+- **Alert on audit export activity**: feed export volume and denied export attempts into the alerts classifier; `audit.*` actions are excluded today · from spec 0013 · needs a decision
 - **WebAuthn or hardware keys**: phishing resistant second factor to replace or augment TOTP · needs a decision
 - **MFA recovery codes**: backup codes for lost authenticators; admin reset covers this for now · needs a decision
 - **Search at scale**: blind index or per clearance tier indexes plus relevance ranking if the corpus outgrows the current scan · from spec 0008 · needs a decision

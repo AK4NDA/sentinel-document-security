@@ -77,6 +77,19 @@ def test_maintenance_retention_settings_must_be_positive(field: str) -> None:
         Settings(master_key=encoded, **{field: 0})
 
 
+def test_export_max_rows_defaults_to_50000() -> None:
+    settings = Settings(master_key=base64.b64encode(b"x" * 32).decode("ascii"))
+
+    assert settings.export_max_rows == 50000
+
+
+def test_export_max_rows_must_be_positive() -> None:
+    encoded = base64.b64encode(b"x" * 32).decode("ascii")
+
+    with pytest.raises(ValidationError):
+        Settings(master_key=encoded, export_max_rows=0)
+
+
 def test_maintenance_settings_read_env_vars(monkeypatch) -> None:
     monkeypatch.setenv("MAINTENANCE_INTERVAL_SECONDS", "5")
     monkeypatch.setenv("MAINTENANCE_SHARE_ALERT_RETENTION_DAYS", "30")
